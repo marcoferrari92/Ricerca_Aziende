@@ -29,14 +29,19 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         for e in elements:
             t = e.get('tags', {})
             if 'name' in t:
+                # Logica per estrarre la tipologia più precisa possibile
+                tipo = t.get('industrial', t.get('shop', t.get('craft', t.get('amenity', 'Azienda'))))
+                
                 ris.append({
                     'Ragione Sociale': t.get('name'),
                     'Comune': t.get('addr:city', 'N.D.'),
-                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip(),
-                    'Tipologia': t.get('description', t.get('industrial', 'Azienda')),
+                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D.",
+                    'Attività Specifica': tipo.replace('_', ' ').title(),
+                    'Produzione/Prodotti': t.get('produce', t.get('product', 'N.D.')),
                     'Sito Web': t.get('website', 'N.D.'),
-                    'Telefono': t.get('phone', 'N.D.'),
-                    'Produzione': t.get('produce', 'N.D.'),
+                    'Email': t.get('email', 'N.D.'),
+                    'Telefono': t.get('phone', t.get('contact:phone', 'N.D.')),
+                    'Orari': t.get('opening_hours', 'N.D.'),
                     'lat': e.get('lat') or e.get('center', {}).get('lat'),
                     'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
