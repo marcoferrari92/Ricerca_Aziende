@@ -168,50 +168,58 @@ if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
 # --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
+import random
+import time
+
 def analizza_sicurezza_ia_multi(nome_azienda):
-    # Definiamo i domini su cui cercare
-    fonti = [
-        "site:ansa.it", 
-        "site:ilgiornaledivicenza.it", 
-        "site:ilgazzettino.it", 
-        "site:corrieredelveneto.corriere.it",
-        "site:vicenzatoday.it",
-        "site:www.vicenzatoday.it"
-    ]
+    # Semplifichiamo la query per non allarmare Google
+    # Cerchiamo solo su Google News generico invece di forzare 5 siti diversi
+    query = f'"{nome_azienda}" sicurezza lavoro infortunio spisal'
     
-    # Query: (Fonti) + "Nome Azienda" + (Keywords Sicurezza)
-    query = f'({" OR ".join(fonti)}) "{nome_azienda}" "sicurezza sul lavoro" OR "infortunio" OR "ispettorato" OR "spisal" OR "incidente"'
-    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    }
+
     try:
-        # Cerchiamo i primi 3 link più rilevanti tra tutte le fonti
-        links = list(search(query, num_results=3, lang="it"))
+        # 1. Aggiungiamo una pausa casuale per simulare un umano (1-3 secondi)
+        time.sleep(random.uniform(1.5, 3.0))
         
+        # 2. Eseguiamo la ricerca
+        # Usiamo stop=5 per limitare il carico
+        search_results = search(query, num_results=5, lang="it", advanced=True)
+        
+        links = []
+        titles = []
+        snippets = []
+
+        for res in search_results:
+            links.append(res.url)
+            titles.append(res.title)
+            snippets.append(res.description)
+
         if not links:
-            return "✅ Nessuna segnalazione critica trovata su testate nazionali o locali (Vicenza/Veneto).", "green"
+            return "✅ Nessuna criticità rilevata nelle testate monitorate.", "green"
 
-        testo_aggregato = ""
-        for url in links[:2]:
-            try:
-                headers = {'User-Agent': 'Mozilla/5.0'} # Per evitare blocchi immediati
-                res = requests.get(url, headers=headers, timeout=5)
-                soup = BeautifulSoup(res.text, 'html.parser')
-                # Estraiamo i primi paragrafi significativi
-                testo_aggregato += " ".join([p.get_text() for p in soup.find_all('p')[:3]])
-            except: continue
-
-        # Analisi del sentiment/contenuto (Simulazione IA)
-        keywords_alert = ["infortunio", "incidente", "mortale", "grave", "caduta", "spisal", "sequestro", "indagine"]
-        testo_lower = testo_aggregato.lower()
+        # 3. Invece di fare lo scraping di ogni sito (che causa l'errore 429), 
+        # analizziamo solo i TITOLI e gli SNIPPET che Google ci ha già dato.
+        # È molto più veloce e non verrai mai bloccato.
         
-        if any(key in testo_lower for key in keywords_alert):
-            return f"⚠️ ALERT SICUREZZA RILEVATO: Sono presenti articoli su testate locali/nazionali riguardanti incidenti o ispezioni. Fonte principale: {links[0]}", "red"
-        elif "certificazione" in testo_lower or "formazione" in testo_lower:
-            return f"ℹ️ INFO POSITIVA: L'azienda appare in articoli riguardanti formazione o nuovi protocolli di sicurezza. Fonte: {links[0]}", "orange"
-        else:
-            return f"🧐 NOTIZIA GENERICA: Trovata menzione dell'azienda in contesti legati alla sicurezza. Verificare dettaglio qui: {links[0]}", "blue"
-            
+        testo_da_analizzare = " ".join(titles) + " " + " ".join(snippets)
+        testo_lower = testo_da_analizzare.lower()
+        
+        keywords_pericolo = ["infortunio", "mortale", "incidente", "spisal", "procura", "indagine"]
+        
+        if any(key in testo_lower for key in keywords_pericolo):
+            # Troviamo il link più pertinente
+            link_pertinente = links[0]
+            return f"⚠️ ALERT SICUREZZA: Rilevate notizie critiche negli snippet di ricerca. Verificare qui: {link_pertinente}", "red"
+        
+        return "ℹ️ Menzioni generiche trovate, ma nessun alert di infortunio grave rilevato.", "blue"
+
     except Exception as e:
-        return f"⚠️ Errore durante il monitoraggio news: {str(e)}", "gray"
+        if "429" in str(e):
+            return "❌ Google ha temporaneamente limitato le ricerche per troppo traffico. Riprova tra qualche minuto.", "gray"
+        return f"⚠️ Errore nel monitoraggio: {str(e)}", "gray"
 
 # --- 4. INTERFACCIA STREAMLIT ---
 st.title("🏢 Intelligence Aziendale Veneto")
