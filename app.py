@@ -103,6 +103,7 @@ if not st.session_state.results.empty:
         st.session_state.results = df_work
         status_msg.success("✅ Arricchimento completato!")
         st.rerun()
+        
 
     # Download
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
