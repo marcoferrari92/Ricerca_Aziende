@@ -22,39 +22,63 @@ if 'pos' not in st.session_state:
 
 # --- 3. FUNZIONI DI SCRAPING ---
 
-def scrape_sito_aziendale(url):
-    """FASE 1: Cerca P.IVA, Email, Fatturato e Capitale Sociale sul sito ufficiale."""
-    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D.", "N.D."
-    if not url.startswith('http'): url = 'http://' + url
+def scrape_portale_camerale(piva):
+    """FASE 2: Estrazione mirata da ReportAziende tramite selettori HTML."""
+    if piva in ["N.D.", "Errore", "Non trovata"] or len(piva) != 11:
+        return "N.D.", "N.D."
+    
+    # URL di ricerca univoco per Partita IVA
+    url = f"https://www.reportaziende.it/ricerca?q={piva}"
+    
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        res = requests.get(url, headers=headers, timeout=5)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        }
+        time.sleep(2) # Importante: i portali camerali sono molto sensibili
+        res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text(separator=' ') # Separatore per evitare parole attaccate
+
+        # Se il sito ci reindirizza alla lista risultati, prendiamo il primo link e ri-entriamo
+        # (Spesso succede se la P.IVA non porta direttamente alla scheda)
+        if "risultati della ricerca" in res.text.lower():
+            link = soup.find('a', href=re.compile(r'/azienda/'))
+            if link:
+                res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, timeout=10)
+                soup = BeautifulSoup(res.text, 'html.parser')
+
+        testo_completo = soup.get_text(separator=' ', strip=True)
+
+        # --- LOGICA 1: Ricerca nelle tabelle (Più precisa) ---
+        fatturato = "N.D."
+        dipendenti = "N.D."
+
+        # Cerchiamo tutte le righe delle tabelle
+        for row in soup.find_all('tr'):
+            cella = row.get_text().lower()
+            if 'fatturato' in cella or 'ricavi' in cella:
+                # Prende i numeri dalla cella successiva o dalla stessa
+                valori = re.findall(r'[\d.,]+\s*(?:€|euro|milioni|mln|mila|k)', cella, re.I)
+                if valori: 
+                    fatturato = valori[0]
+                    break
+            
+            if 'dipendenti' in cella or 'organico' in cella:
+                num = re.search(r'\b\d+\b', cella)
+                if num: dipendenti = num.group(0)
+
+        # --- LOGICA 2: Fallback su Regex testuale (se la tabella fallisce) ---
+        if fatturato == "N.D.":
+            # Pattern specifico per ReportAziende: cerca numero dopo "Fatturato"
+            match_f = re.search(r'fatturato\s+([€\d.,\s]+(?:milioni|mln|euro|€))', testo_completo, re.I)
+            if match_f: fatturato = match_f.group(1).strip()
+
+        # Pulizia finale per evitare il "Vedi online" generico
+        if len(fatturato) < 3: fatturato = "Vedi online"
         
-        # 1. Partita IVA (11 cifre)
-        piva = re.search(r'\b\d{11}\b', testo)
-        
-        # 2. Email
-        email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        
-        # 3. Fatturato (se presente nel testo)
-        fatt = re.search(r'Fatturato[:\s]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)', testo, re.I)
-        
-        # 4. Capitale Sociale (Pattern: Cap. Soc. seguito da cifre ed euro)
-        # Nuova Regex per il Capitale Sociale
-        # Gestisce: "Cap. Soc. Euro 10.000", "Capitale Sociale: 50.000 €", "Cap. Soc. i.v. 10.000,00"
-        cap_pattern = r'(?:Capitale\s+Sociale|Cap\.?\s*Soc\.?)\s*(?:i\.v\.)?[:\s]*(?:euro|€)?\s*([\d.,]+(?:\s*(?:euro|€|mila|mln))?)'
-        cap_soc = re.search(cap_pattern, testo, re.I)
-        
-        return (
-            piva.group(0) if piva else "N.D.", 
-            email.group(0) if email else "N.D.",
-            fatt.group(1).strip() if fatt else "N.D.",
-            cap_soc.group(1).strip() if cap_soc else "N.D."
-        )
-    except: 
-        return "Errore", "N.D.", "N.D.", "N.D."
+        return fatturato, dipendenti
+
+    except Exception as e:
+        return "Errore connessione", "Errore"
 
 def scrape_portale_camerale(piva):
     """FASE 2: Cerca dati ufficiali di bilancio (Versione Potenziata)."""
