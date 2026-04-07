@@ -92,11 +92,16 @@ if not st.session_state.results.empty:
             df = st.session_state.results.copy()
             bar = st.progress(0)
             for i, row in df.iterrows():
+                # CHIAMATA A 3 VARIABILI (p, e, f)
                 p, e, f = scrape_sito_aziendale(row['Sito Web'])
+                
                 df.at[i, 'Partita IVA'] = p
-                if row['Email'] == 'N.D.': df.at[i, 'Email'] = e
+                if row['Email'] == 'N.D.': 
+                    df.at[i, 'Email'] = e
                 df.at[i, 'Fatturato (da sito)'] = f
+                
                 bar.progress((i + 1) / len(df))
+            
             st.session_state.results = df
             st.rerun()
             
