@@ -168,11 +168,26 @@ if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
 # --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
+import re
+
+def pulisci_nome_universale(nome):
+    # Lista delle sigle comuni (puoi espanderla)
+    sigle = r'\b(S\.p\.A\.|SpA|S\.r\.l\.|Srl|S\.n\.c\.|Snc|S\.a\.s\.|Sas|S\.p\.A|S\.r\.l|Srls|Soc\. Coop\.)\b'
+    # Rimuove le sigle ignorando maiuscole/minuscole
+    nome_pulito = re.sub(sigle, '', nome, flags=re.IGNORECASE)
+    # Rimuove caratteri speciali come virgole o punti alla fine
+    nome_pulito = re.sub(r'[.,]', '', nome_pulito).strip()
+    return nome_pulito
+
+# --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
 from duckduckgo_search import DDGS 
 
 def analizza_sicurezza_ia_multi(nome_azienda):
+
+    nome_query = pulisci_nome_universale(nome_azienda)
+    
     # Usiamo DuckDuckGo: non richiede API Key e non blocca l'IP facilmente come Google
-    query = f'"{nome_azienda}" sicurezza lavoro OR infortunio OR ferito OR morto OR spisal'
+    query = f'"{nome_query}" sicurezza lavoro OR infortunio OR ferito OR morto OR spisal'
     
     try:
         with DDGS() as ddgs:
