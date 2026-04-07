@@ -223,7 +223,7 @@ if 'results' not in st.session_state: st.session_state.results = pd.DataFrame()
 with st.sidebar:
     st.header("⚙️ Parametri Scansione")
     raggio = st.slider("Raggio (KM)", 1, 30, 5)
-    scelte = st.multiselect("Settori ATECO", list(ATECO_MAP.keys()), default=["C - MANIFATTURIERE"])
+    scelte = st.multiselect("Settori ATECO", list(ATECO_MAP.keys()))
     if st.button("🗑️ Reset Dati"):
         st.session_state.results = pd.DataFrame()
         st.rerun()
