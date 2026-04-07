@@ -28,18 +28,17 @@ ATECO_MAP = {
 }
 
 def fetch_data_multi(zona, macrosettori_scelti):
-    url = "http://overpass-api.de/api/interpreter"
+    # Usiamo un endpoint diverso (Kumi Systems) che spesso è più veloce
+    url = "https://overpass.kumi.systems/api/interpreter"
     
-    # Raccogliamo TUTTI i tag di TUTTI i macrosettori selezionati
     tutti_i_tag = []
     for ms in macrosettori_scelti:
         tutti_i_tag.extend(ATECO_MAP[ms])
     
-    # Creiamo la Regex OR (es: "farm|industrial|hotel")
-    regex_query = "|".join(set(tutti_i_tag)) # set() rimuove eventuali duplicati
+    regex_query = "|".join(set(tutti_i_tag))
     
     query = f"""
-    [out:json][timeout:120];
+    [out:json][timeout:180]; // Aumentato il timeout a 180 secondi
     area["name"="{zona}"]["admin_level"~"4|6|8"]->.searchArea;
     (
       nwr["shop"~"{regex_query}"](area.searchArea);
@@ -50,7 +49,27 @@ def fetch_data_multi(zona, macrosettori_scelti):
       nwr["office"~"{regex_query}"](area.searchArea);
     );
     out center;
+
     """
+    try:
+        response = requests.get(url, params={'data': query})
+        
+        # CONTROLLO CRITICO: Verifichiamo se la risposta è davvero un JSON
+        if response.status_code == 200:
+            try:
+                data = response.json()
+            except ValueError:
+                st.error("Il server ha risposto in modo errato (non JSON). Riprova tra un istante.")
+                return pd.DataFrame()
+        elif response.status_code == 429:
+            st.error("Troppe richieste! Attendi 30 secondi prima di riprovare.")
+            return pd.DataFrame()
+        else:
+            st.error(f"Errore del server Overpass: {response.status_code}")
+            return pd.DataFrame()
+
+        elements = data.get('elements', [])
+        # ... resto del codice per estrarre i risultati ...
     try:
         response = requests.get(url, params={'data': query})
         elements = response.json().get('elements', [])
