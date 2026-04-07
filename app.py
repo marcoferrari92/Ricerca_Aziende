@@ -81,32 +81,45 @@ def scrape_portale_camerale(piva):
         return "Errore connessione", "Errore"
 
 def scrape_portale_camerale(piva):
-    """FASE 2: Cerca dati ufficiali di bilancio (Versione Potenziata)."""
+    """FASE 2: Estrazione mirata basata sulla struttura dello screenshot."""
     if piva in ["N.D.", "Errore", "Non trovata"] or len(piva) != 11:
         return "N.D.", "N.D."
     
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
         }
-        time.sleep(1.5) 
+        time.sleep(2)
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text(separator=' ').strip()
 
-        fatt_pattern = r'fatturato\s*(?:\d{4})?[:\s-]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)'
-        dip_pattern = r'dipendenti[:\s-]*(\d+)'
+        # Se non siamo già nella scheda azienda, cerchiamo il link
+        if "Dati della società" not in res.text:
+            link = soup.find('a', href=re.compile(r'/azienda/'))
+            if link:
+                res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers)
+                soup = BeautifulSoup(res.text, 'html.parser')
 
-        fatt_match = re.search(fatt_pattern, testo, re.IGNORECASE)
-        dip_match = re.search(dip_pattern, testo, re.IGNORECASE)
+        # Otteniamo il testo con separatore per isolare bene le righe
+        testo = soup.get_text(separator='|', strip=True)
 
-        fatturato = fatt_match.group(1).strip() if fatt_match else "Controlla link"
-        dipendenti = dip_match.group(1).strip() if dip_match else "N.D."
+        # 1. Estrazione Fatturato
+        # Cerchiamo: Fatturato: seguito da € e cifre, fermandoci prima della parentesi dell'anno
+        fatt_match = re.search(r'Fatturato[:\s]*€?\s*([\d.,]+)', testo, re.I)
+        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
 
-        if len(fatturato) < 2: fatturato = "Vedi online"
+        # 2. Estrazione Dipendenti
+        # Cerchiamo: Dipendenti: seguito da numeri, ignorando l'anno tra parentesi
+        dip_match = re.search(r'Dipendenti[:\s]*(\d+)', testo, re.I)
+        dipendenti = dip_match.group(1) if dip_match else "N.D."
+
+        # Pulizia extra: se il fatturato trovato è solo "€", resettiamo
+        if fatturato == "€ " or len(fatturato) < 5:
+            fatturato = "Vedi online"
+
         return fatturato, dipendenti
+
     except Exception as e:
         return "Errore", "Errore"
 
