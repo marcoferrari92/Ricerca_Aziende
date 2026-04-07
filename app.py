@@ -42,8 +42,9 @@ def scrape_sito_aziendale(url):
         fatt = re.search(r'Fatturato[:\s]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)', testo, re.I)
         
         # 4. Capitale Sociale (Pattern: Cap. Soc. seguito da cifre ed euro)
-        # Cerca varianti come: "Capitale Sociale i.v. € 100.000", "Cap. Soc. 50.000,00 Euro"
-        cap_pattern = r'(?:Capitale\s+Sociale|Cap\.\s*Soc\.)[:\s]*(?:i\.v\.)?[:\s]*([€\d.,\s]+(?:euro|€)?)'
+        # Nuova Regex per il Capitale Sociale
+        # Gestisce: "Cap. Soc. Euro 10.000", "Capitale Sociale: 50.000 €", "Cap. Soc. i.v. 10.000,00"
+        cap_pattern = r'(?:Capitale\s+Sociale|Cap\.?\s*Soc\.?)\s*(?:i\.v\.)?[:\s]*(?:euro|€)?\s*([\d.,]+(?:\s*(?:euro|€|mila|mln))?)'
         cap_soc = re.search(cap_pattern, testo, re.I)
         
         return (
