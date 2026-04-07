@@ -98,27 +98,27 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         r = requests.get(url, params={'data': query}, timeout=100)
         elements = r.json().get('elements', [])
         ris = []
+        # Inizia il ciclo sugli elementi ricevuti da Overpass
         for e in elements:
             t = e.get('tags', {})
             if 'name' in t:
-                # 1. Pulizia Ragione Sociale (evita spazi bianchi extra)
+                # 1. Pulizia Ragione Sociale
                 nome = t.get('name', 'N.D.').strip()
         
                 # 2. Comune e CAP
                 comune = t.get('addr:city', 'N.D.')
                 cap = t.get('addr:postcode', 'N.D.')
         
-                # 3. Indirizzo (Gestione intelligente: se manca via, non mettere spazio vuoto)
+                # 3. Indirizzo
                 via = t.get('addr:street', '')
                 civico = t.get('addr:housenumber', '')
                 indirizzo = f"{via} {civico}".strip() or "N.D."
         
-                # 4. Attività (Cascata di priorità per non restare mai a secco)
-                # Cerchiamo in ordine: Ufficio, Industria, Negozio, Artigianato, Servizio
+                # 4. Attività (Cascata di priorità)
                 attivita_raw = t.get('office') or t.get('industrial') or t.get('shop') or t.get('craft') or t.get('amenity') or 'Azienda'
                 attivita = attivita_raw.replace('_', ' ').title()
         
-                # 5. Contatti (Aggiunta di varianti comuni)
+                # 5. Contatti
                 sito = t.get('website') or t.get('contact:website') or 'N.D.'
                 email = t.get('email') or t.get('contact:email') or 'N.D.'
         
@@ -129,11 +129,12 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
                 operatore = t.get('operator', 'N.D.')
                 brand = t.get('brand', 'N.D.')
         
-                # 7. Coordinate (Essenziale per la mappa)
+                # 7. Coordinate
                 lat_res = e.get('lat') or e.get('center', {}).get('lat')
                 lon_res = e.get('lon') or e.get('center', {}).get('lon')
         
-             if lat_res and lon_res: # Aggiungiamo solo se abbiamo la posizione
+                # --- CORREZIONE QUI: Indentazione allineata al blocco 'if name in t' ---
+                if lat_res and lon_res: 
                     ris.append({
                         'Ragione Sociale': nome,
                         'Comune': comune,
