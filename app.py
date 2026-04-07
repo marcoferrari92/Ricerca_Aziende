@@ -172,7 +172,7 @@ from duckduckgo_search import DDGS
 
 def analizza_sicurezza_ia_multi(nome_azienda):
     # Usiamo DuckDuckGo: non richiede API Key e non blocca l'IP facilmente come Google
-    query = f'"{nome_azienda}" sicurezza lavoro infortunio spisal'
+    query = f'"{nome_azienda}" sicurezza lavoro OR infortunio OR ferito OR morto OR spisal'
     
     try:
         with DDGS() as ddgs:
