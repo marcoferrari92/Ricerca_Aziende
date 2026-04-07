@@ -3,10 +3,12 @@ import pandas as pd
 import requests
 import folium
 from streamlit_folium import st_folium
-from googlesearch import search
+import re
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 import time
+
+# --- 1. CONFIGURAZIONE PAGINA ---
+st.set_page_config(layout="wide", page_title="Business Intelligence Veneto")
 
 # --- 1. MAPPATURA TAG (COMPLETA) ---
 ATECO_MAP = {
@@ -168,104 +170,104 @@ if 'pos' not in st.session_state:
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
-# --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
-import re
-
-def pulisci_nome_universale(nome):
-    # Lista delle sigle comuni (puoi espanderla)
-    sigle = r'\b(S\.p\.A\.|SpA|S\.r\.l\.|Srl|S\.n\.c\.|Snc|S\.a\.s\.|Sas|S\.p\.A|S\.r\.l|Srls|Soc\. Coop\.)\b'
-    # Rimuove le sigle ignorando maiuscole/minuscole
-    nome_pulito = re.sub(sigle, '', nome, flags=re.IGNORECASE)
-    # Rimuove caratteri speciali come virgole o punti alla fine
-    nome_pulito = re.sub(r'[.,]', '', nome_pulito).strip()
-    return nome_pulito
-
-# --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
-def analizza_sicurezza_ia_multi(nome_azienda):
-    # 1. Puliamo il nome in modo universale
-    nome_query = pulisci_nome_universale(nome_azienda)
+def scrape_azienda_info(url):
+    """Visita il sito web per estrarre P.IVA ed Email."""
+    if not url or url == 'N.D.':
+        return "N.D.", "N.D."
     
-    # 2. Query "Ampia": Nome + (Termini di cronaca o controlli)
-    # NOTA: Senza virgolette nel nome per permettere flessibilità
-    query = f'{nome_query} incidente OR morto OR infortunio OR spisal'
-    
-    try:
-        with DDGS() as ddgs:
-            # Cerchiamo 10 risultati: la cronaca locale spesso non è nei primi 2
-            results = [r for r in ddgs.text(query, region='it-it', max_results=10)]
-            
-        if not results:
-            return "✅ Nessun alert rilevato nelle ricerche generali.", "green"
-
-        testo_monitoraggio = ""
-        for r in results:
-            testo_monitoraggio += f"{r['title']} {r['body']} ".lower()
-
-        # 3. Analisi dei risultati (Semaforo)
-        if any(word in testo_monitoraggio for word in ["morto", "mortale", "deceduto", "grave"]):
-            return f"🚨 ALERT CRONACA: Trovate notizie di incidenti gravi. Verificare: {results[0]['href']}", "red"
+    if not url.startswith('http'):
+        url = 'http://' + url
         
-        if "spisal" in testo_monitoraggio or "ispettorato" in testo_monitoraggio:
-            return f"⚠️ CONTROLLO: Trovate menzioni di ispezioni o verbali. Verificare: {results[0]['href']}", "orange"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=8)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        testo = soup.get_text()
 
-        return "ℹ️ Analisi completata: non sono emersi incidenti gravi recenti.", "blue"
+        # Regex per Partita IVA (11 cifre consecutive, spesso precedute da IT o P.IVA)
+        piva_match = re.search(r'\b\d{11}\b', testo)
+        piva = piva_match.group(0) if piva_match else "Non trovata"
 
-    except Exception as e:
-        return f"⚠️ Errore tecnico nella ricerca: {str(e)}", "gray"
+        # Regex per Email
+        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+        email = email_match.group(0) if email_match else "Non trovata"
 
-# --- 4. INTERFACCIA STREAMLIT ---
-st.title("🏢 Intelligence Aziendale Veneto")
-st.markdown("Monitoraggio geografico ATECO con analisi reputazionale su **ANSA** e **Giornali Locali**.")
+        return piva, email
+    except:
+        return "Errore Sito", "Errore Sito"
+
+# --- 3. LOGICA INTERFACCIA ---
+
+st.title("🏭 Business Data Extractor")
+st.markdown("Trova aziende sulla mappa e scarica **Partita IVA** ed **Email** direttamente dai loro siti web.")
 
 if 'pos' not in st.session_state: st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
 if 'results' not in st.session_state: st.session_state.results = pd.DataFrame()
 
-# Sidebar
 with st.sidebar:
-    st.header("⚙️ Parametri Scansione")
-    raggio = st.slider("Raggio (KM)", 1, 30, 5)
-    scelte = st.multiselect("Settori ATECO", list(ATECO_MAP.keys()))
-    if st.button("🗑️ Reset Dati"):
+    st.header("⚙️ Filtri Ricerca")
+    raggio = st.slider("Raggio Scansione (KM)", 1, 20, 5)
+    scelte = st.multiselect("Settori Aziendali", list(ATECO_MAP.keys()))
+    
+    if st.button("🗑️ Reset"):
         st.session_state.results = pd.DataFrame()
         st.rerun()
 
-# Mappa
+# --- 4. MAPPA INTERATTIVA ---
+st.subheader("1. Seleziona area e scansiona")
 m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
-folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="#3186cc", fill=True, opacity=0.1).add_to(m)
+folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(m)
 
 if not st.session_state.results.empty:
     for _, row in st.session_state.results.iterrows():
         folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
 
-st_folium(m, width="100%", height=400, key="main_map")
+map_res = st_folium(m, width="100%", height=400, key="map_bi")
 
-# Pulsante Ricerca
-if st.button("🚀 SCANSIONA AREA SELEZIONATA", use_container_width=True):
-    with st.spinner("Analisi cartografica in corso..."):
-        res = fetch_data(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
-        if not res.empty:
-            st.session_state.results = res
+if map_res and map_res['last_clicked']:
+    new_lat, new_lon = map_res['last_clicked']['lat'], map_res['last_clicked']['lng']
+    if new_lat != st.session_state.pos['lat']:
+        st.session_state.pos = {'lat': new_lat, 'lon': new_lon}
+        st.rerun()
+
+if st.button("🚀 TROVA AZIENDE", use_container_width=True):
+    if not scelte:
+        st.warning("Seleziona almeno un settore!")
+    else:
+        with st.spinner("Ricerca in corso..."):
+            df = fetch_data(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
+            st.session_state.results = df
             st.rerun()
-        else: st.warning("Nessuna azienda trovata. Clicca su un'altra zona della mappa.")
 
-# Risultati e Analisi IA
+# --- 5. RISULTATI E SCRAPING ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader("📋 Aziende Rilevate")
+    st.subheader("2. Database Risultati")
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon']), use_container_width=True)
 
-    st.divider()
-    st.subheader("🤖 Analisi Sicurezza IA (ANSA + Giornali Locali)")
-    target = st.selectbox("Seleziona l'azienda da analizzare:", st.session_state.results['Ragione Sociale'])
+    st.subheader("3. Arricchimento Dati (Web Crawler)")
+    st.info("Questa funzione visiterà ogni sito web trovato per cercare la Partita IVA e l'Email ufficiale.")
     
-    if st.button("🔍 GENERA REPORT REPUTAZIONALE"):
-        with st.spinner(f"L'IA sta consultando l'archivio storico di ANSA, Giornale di Vicenza e Gazzettino per {target}..."):
-            report, colore = analizza_sicurezza_ia_multi(target)
-            if colore == "red": st.error(report)
-            elif colore == "orange": st.warning(report)
-            elif colore == "green": st.success(report)
-            else: st.info(report)
+    if st.button("🔍 ESTRAI P.IVA ED EMAIL DAI SITI WEB", use_container_width=True):
+        df_work = st.session_state.results.copy()
+        progress_bar = st.progress(0)
+        status = st.empty()
+        
+        count = len(df_work)
+        for i, row in df_work.iterrows():
+            if row['Sito Web'] != 'N.D.':
+                status.text(f"Analisi sito: {row['Sito Web']}...")
+                piva, email_web = scrape_azienda_info(row['Sito Web'])
+                df_work.at[i, 'Partita IVA'] = piva
+                if row['Email'] == 'N.D.':
+                    df_work.at[i, 'Email'] = email_web
+            
+            progress_bar.progress((i + 1) / count)
+        
+        st.session_state.results = df_work
+        status.success("✅ Arricchimento completato!")
+        st.rerun()
 
     # Download
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica Database CSV", csv, "export_vicenza.csv", "text/csv")
+    st.download_button("📥 Scarica Database Finale (CSV)", csv, "aziende_vicenza_full.csv", "text/csv")
