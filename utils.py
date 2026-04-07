@@ -66,7 +66,7 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         return pd.DataFrame()
 
 
-def scrape_azienda_info(url):
+def scrape_sito_aziendale(url):
     """Fase 1: Estrae P.IVA ed Email dal sito ufficiale dell'azienda."""
     if not url or url == 'N.D.':
         return "N.D.", "N.D."
