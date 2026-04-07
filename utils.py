@@ -95,66 +95,59 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione da Ufficio Camerale con Headers avanzati."""
+    """FASE 2: Estrazione da Ufficio Camerale con gestione Timeout."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # URL di ricerca specifico
-    search_url = f"https://www.ufficiocamerale.it/ricerca-aziende?q={piva_clean}"
+    # Proviamo ad andare direttamente alla pagina dell'azienda se possibile, 
+    # o usiamo la ricerca rapida
+    url = f"https://www.ufficiocamerale.it/ricerca-aziende?q={piva_clean}"
     
     try:
-        # Usiamo un Session object per gestire meglio i cookie
-        session = requests.Session()
-        
-        # Headers che imitano perfettamente un browser Chrome su Windows
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Cache-Control': 'max-age=0',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Referer': 'https://www.google.com/'
+            'Accept-Language': 'it-IT,it;q=0.9',
+            'Referer': 'https://www.google.it/'
         }
         
-        # Pausa più lunga: Ufficio Camerale odia gli script veloci
-        time.sleep(3.5) 
+        # Aspetta un tempo casuale per simulare un umano (tra 3 e 5 secondi)
+        import random
+        time.sleep(random.uniform(3, 5))
         
-        # Eseguiamo la ricerca
-        res = session.get(search_url, headers=headers, timeout=15, verify=False)
+        # Timeout alzato a 20 secondi per gestire i rallentamenti del server
+        res = requests.get(url, headers=headers, timeout=20, verify=False)
         
-        if res.status_code != 200:
-            return f"Blocco Sito ({res.status_code})", "N.D."
-
+        if res.status_code == 403:
+            return "Accesso Negato (403)", "N.D."
+            
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Cerchiamo il link alla scheda azienda (solitamente nel primo h3 o link con classe specifica)
-        link_scheda = soup.find('a', href=re.compile(r'/azienda/'))
-        
-        if link_scheda:
-            url_finale = link_scheda['href']
-            if not url_finale.startswith('http'):
-                url_finale = "https://www.ufficiocamerale.it" + url_finale
-            
-            # Pausa tra ricerca e scheda
-            time.sleep(2)
-            res = session.get(url_finale, headers=headers, timeout=15, verify=False)
-            soup = BeautifulSoup(res.text, 'html.parser')
+        # Se siamo ancora nella pagina di ricerca, proviamo a prendere il primo risultato
+        if "Risultati della ricerca" in res.text or not soup.find('h1'):
+            link = soup.find('a', href=re.compile(r'/azienda/'))
+            if link:
+                full_link = "https://www.ufficiocamerale.it" + link['href'] if not link['href'].startswith('http') else link['href']
+                time.sleep(2)
+                res = requests.get(full_link, headers=headers, timeout=20, verify=False)
+                soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Estrazione dati con selettori più precisi
-        # Ufficio Camerale usa spesso etichette chiare nel testo
+        # Estrazione dati basata sul testo della pagina
         testo = soup.get_text(separator='|', strip=True)
 
-        # Cerchiamo il fatturato (Regex specifica per il loro formato € 1.234.567)
+        # Regex flessibili
         fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
-        # Cerchiamo i dipendenti
         dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
 
         fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
         dipendenti = dip_match.group(1) if dip_match else "N.D."
 
         return fatturato, dipendenti
+
+    except requests.exceptions.Timeout:
+        return "Timeout (Sito Lento)", "N.D."
+    except Exception as e:
+        return "Errore Connessione", "N.D."
         
     except Exception as e:
         # Questo cattura errori di connessione o timeout
