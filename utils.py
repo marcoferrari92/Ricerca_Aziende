@@ -95,35 +95,57 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione basata sulla struttura dello screenshot di ReportAziende."""
-    if piva in ["N.D.", "Errore", "Non trovata", "Errore Sito"] or len(str(piva)) != 11:
-        return "N.D.", "N.D."
+    """FASE 2: Estrazione da Ufficio Camerale tramite Partita IVA."""
+    piva_clean = "".join(filter(str.isdigit, str(piva)))
+    if len(piva_clean) != 11:
+        return "P.IVA non valida", "N.D."
     
-    url = f"https://www.reportaziende.it/ricerca?q={piva}"
+    # URL di ricerca di Ufficio Camerale
+    search_url = f"https://www.ufficiocamerale.it/ricerca-aziende?q={piva_clean}"
+    
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        time.sleep(2) # Pausa necessaria per non essere bloccati
-        res = requests.get(url, headers=headers, timeout=10, verify=False)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Referer': 'https://www.ufficiocamerale.it/'
+        }
+        
+        # Pausa per non essere identificati come bot aggressivi
+        time.sleep(2.5) 
+        res = requests.get(search_url, headers=headers, timeout=12, verify=False)
+        
+        if res.status_code != 200:
+            return "Errore Accesso", "N.D."
+
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se il sito non mostra subito i dati, cerca il link della scheda azienda
-        if "Dati della società" not in res.text:
-            link = soup.find('a', href=re.compile(r'/azienda/'))
-            if link:
-                res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, verify=False)
-                soup = BeautifulSoup(res.text, 'html.parser')
-
-        # Usiamo il separatore '|' come abbiamo visto per pulire i dati dello screenshot
-        testo = soup.get_text(separator='|', strip=True)
+        # Ufficio Camerale spesso ti manda a una lista di risultati.
+        # Dobbiamo trovare il primo link che punta alla scheda azienda.
+        link_scheda = soup.find('a', href=re.compile(r'/azienda/'))
         
-        # Estrazione Fatturato
-        fatt_match = re.search(r'Fatturato[:\s]*€?\s*([\d.,]+)', testo, re.I)
-        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
+        if link_scheda:
+            url_finale = link_scheda['href']
+            if not url_finale.startswith('http'):
+                url_finale = "https://www.ufficiocamerale.it" + url_finale
+            
+            # Seconda chiamata per entrare nella scheda vera e propria
+            time.sleep(1.5)
+            res = requests.get(url_finale, headers=headers, timeout=12, verify=False)
+            soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Estrazione Dipendenti
-        dip_match = re.search(r'Dipendenti[:\s]*(\d+)', testo, re.I)
+        testo = soup.get_text(separator='|', strip=True)
+
+        # Cerchiamo il Fatturato (Ufficio Camerale usa spesso formati come 'Fatturato: € 1.234.567')
+        # La regex cerca la parola fatturato e il primo valore monetario che segue
+        fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
+        
+        # Cerchiamo i Dipendenti
+        dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
+
+        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
         dipendenti = dip_match.group(1) if dip_match else "N.D."
 
-        return fatturato, dipendenti # Ritorna 2 valori
-    except:
-        return "Errore", "Errore"
+        return fatturato, dipendenti
+        
+    except Exception as e:
+        return "Errore Ricerca", "N.D."
