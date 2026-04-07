@@ -101,21 +101,15 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         for e in elements:
             t = e.get('tags', {})
             if 'name' in t:
-                # Estrazione e formattazione parametri richiesti
-                nome = t.get('name')
-                comune_cap = f"{t.get('addr:city', 'N.D.')} ({t.get('addr:postcode', 'N.D.')})"
-                indirizzo = f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D."
-                attivita = t.get('industrial', t.get('shop', t.get('amenity', t.get('craft', 'Azienda')))).replace('_', ' ').title()
-                sito = t.get('website', 'N.D.')
-                email = t.get('email', 'N.D.')
-                
+                # Estrazione parametri con colonne separate
                 ris.append({
-                    'Ragione Sociale': nome,
-                    'Comune (CAP)': comune_cap,
-                    'Indirizzo': indirizzo,
-                    'Attività': attivita,
-                    'Sito Web': sito,
-                    'Email': email,
+                    'Ragione Sociale': t.get('name'),
+                    'Comune': t.get('addr:city', 'N.D.'),
+                    'CAP': t.get('addr:postcode', 'N.D.'),
+                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D.",
+                    'Attività': t.get('industrial', t.get('shop', t.get('amenity', t.get('craft', 'Azienda')))).replace('_', ' ').title(),
+                    'Sito Web': t.get('website', 'N.D.'),
+                    'Email': t.get('email', 'N.D.'),
                     'lat': e.get('lat') or e.get('center', {}).get('lat'),
                     'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
