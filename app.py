@@ -6,75 +6,21 @@ from streamlit_folium import st_folium
 import re
 from bs4 import BeautifulSoup
 import time
-from mapping import ATECO_MAP  # Import dal tuo file esterno
+
+# Import delle componenti esterne
+from mapping import ATECO_MAP 
+from utils import fetch_data
 
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor")
 
+# --- 2. GESTIONE STATO ---
+if 'results' not in st.session_state: 
+    st.session_state.results = pd.DataFrame()
+if 'pos' not in st.session_state: 
+    st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
 
-# --- 2. FUNZIONE DI RICERCA AZIENDE SULLE MAPPE ---
-def fetch_data(lat, lon, raggio_km, macrosettori):
-    url = "https://overpass-api.de/api/interpreter"
-    raggio_m = int(raggio_km * 1000)
-    filtri = ""
-    for ms in macrosettori:
-        for t in ATECO_MAP.get(ms, []):
-            filtri += f"nwr{t}(around:{raggio_m},{lat},{lon});\n"
-    
-    query = f"[out:json][timeout:90];({filtri});out tags center;"
-    try:
-        r = requests.get(url, params={'data': query}, timeout=100)
-        elements = r.json().get('elements', [])
-        ris = [] 
-        
-        for e in elements:
-            t = e.get('tags', {})
-            if 'name' in t:
-                lat_res = e.get('lat')
-                lon_res = e.get('lon')
-                
-                if lat_res is None and 'center' in e:
-                    lat_res = e['center'].get('lat')
-                    lon_res = e['center'].get('lon')
-
-                if lat_res and lon_res:
-                    nome = t.get('name', 'N.D.').strip()
-                    comune = t.get('addr:city', 'N.D.')
-                    cap = t.get('addr:postcode', 'N.D.')
-                    via = t.get('addr:street', '')
-                    civico = t.get('addr:housenumber', '')
-                    indirizzo_completo = f"{via} {civico}".strip() or "N.D."
-                    
-                    attivita_raw = (t.get('office') or t.get('industrial') or 
-                                   t.get('shop') or t.get('craft') or 
-                                   t.get('amenity') or 'Azienda')
-                    attivita_pulita = attivita_raw.replace('_', ' ').title()
-                    
-                    sito = t.get('website') or t.get('contact:website') or 'N.D.'
-                    email = t.get('email') or t.get('contact:email') or 'N.D.'
-                    linkedin = t.get('contact:linkedin') or t.get('linkedin') or 'N.D.'
-                    
-                    ris.append({
-                        'Ragione Sociale': nome,
-                        'Comune': comune,
-                        'CAP': cap,
-                        'Indirizzo': indirizzo_completo,
-                        'Attività': attivita_pulita,
-                        'Sito Web': sito,
-                        'Email': email,
-                        'LinkedIn': linkedin,
-                        'Proprietà': t.get('operator', 'N.D.'),
-                        'Brand': t.get('brand', 'N.D.'),
-                        'Partita IVA': 'N.D.',
-                        'Fatturato': 'N.D.',
-                        'Dipendenti': 'N.D.',
-                        'lat': lat_res,
-                        'lon': lon_res
-                    })
-        return pd.DataFrame(ris)
-    except:
-        return pd.DataFrame()
-
+# --- 3. FUNZIONI DI SCRAPING ---
 
 def scrape_sito_aziendale(url):
     """FASE 1: Cerca P.IVA ed Email sul sito ufficiale."""
@@ -88,7 +34,7 @@ def scrape_sito_aziendale(url):
         
         piva = re.search(r'\b\d{11}\b', testo)
         email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        # Tentativo di trovare fatturato se scritto esplicitamente nel sito (es. "Fatturato 2024: ...")
+        # Tentativo di trovare fatturato se scritto esplicitamente nel sito
         fatt = re.search(r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
         
         return (piva.group(0) if piva else "N.D.", 
@@ -101,38 +47,30 @@ def scrape_portale_camerale(piva):
     if piva in ["N.D.", "Errore", "Non trovata"] or len(piva) != 11:
         return "N.D.", "N.D."
     
-    # Proviamo ReportAziende che è solitamente più leggibile
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept-Language': 'it-IT,it;q=0.9'
         }
-        time.sleep(1.5) # Aumentato il delay per sicurezza
+        time.sleep(1.5) 
         res = requests.get(url, headers=headers, timeout=10)
-        
-        # Usiamo BeautifulSoup per isolare il testo "pulito"
         soup = BeautifulSoup(res.text, 'html.parser')
         testo = soup.get_text(separator=' ').strip()
 
-        # Regex migliorata: cerca la parola fatturato e cattura i numeri/simboli successivi
-        # Gestisce: "Fatturato € 1.234.567", "Fatturato 2024: 10mln", ecc.
         fatt_pattern = r'fatturato\s*(?:\d{4})?[:\s-]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)'
         dip_pattern = r'dipendenti[:\s-]*(\d+)'
 
         fatt_match = re.search(fatt_pattern, testo, re.IGNORECASE)
         dip_match = re.search(dip_pattern, testo, re.IGNORECASE)
 
-        # Pulizia del risultato per togliere spazi inutili
         fatturato = fatt_match.group(1).strip() if fatt_match else "Controlla link"
         dipendenti = dip_match.group(1).strip() if dip_match else "N.D."
 
-        # Se il fatturato estratto è troppo corto (es. solo un simbolo), resettiamo
         if len(fatturato) < 2: fatturato = "Vedi online"
-
         return fatturato, dipendenti
     except Exception as e:
-        return f"Errore: {str(e)[:10]}", "Errore"
+        return "Errore", "Errore"
 
 # --- 4. INTERFACCIA ---
 st.title("🏭 Business Intelligence Veneto")
@@ -145,18 +83,16 @@ with st.sidebar:
         st.session_state.results = pd.DataFrame()
         st.rerun()
 
-# --- MAPPA INTERATTIVA (Sistemata) ---
+# --- MAPPA INTERATTIVA ---
 st.subheader("1. Area di Ricerca")
 m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
 folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], 
               radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(m)
 
-# Aggiungi marker se ci sono risultati
 if not st.session_state.results.empty:
     for _, row in st.session_state.results.iterrows():
         folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
 
-# Mostra la mappa e cattura il click
 map_data = st_folium(m, width="100%", height=400, key="main_map")
 
 if map_data and map_data.get('last_clicked'):
@@ -173,7 +109,7 @@ if st.button("🚀 CERCA AZIENDE", use_container_width=True):
     else:
         st.warning("Seleziona almeno un settore!")
 
-# --- RISULTATI E PULSANTI DI ARRICCHIMENTO ---
+# --- 5. RISULTATI E ARRICCHIMENTO ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Risultati e Arricchimento")
@@ -189,7 +125,8 @@ if not st.session_state.results.empty:
                 p, e, f = scrape_sito_aziendale(row['Sito Web'])
                 df.at[i, 'Partita IVA'] = p
                 if row['Email'] == 'N.D.': df.at[i, 'Email'] = e
-                df.at[i, 'Fatturato (da sito)'] = f
+                # Se vuoi aggiornare la colonna fatturato generica o una specifica
+                if 'Fatturato' in df.columns: df.at[i, 'Fatturato'] = f
                 bar.progress((i + 1) / len(df))
             st.session_state.results = df
             st.rerun()
@@ -199,15 +136,13 @@ if not st.session_state.results.empty:
             df = st.session_state.results.copy()
             bar = st.progress(0)
             for i, row in df.iterrows():
-                # Procediamo solo se abbiamo una P.IVA valida
                 if row['Partita IVA'] not in ["N.D.", "Errore", "Non trovata"]:
                     fc, d = scrape_portale_camerale(row['Partita IVA'])
-                    df.at[i, 'Fatturato (Camerale)'] = fc
-                    df.at[i, 'Dipendenti'] = d
+                    if 'Fatturato' in df.columns: df.at[i, 'Fatturato'] = fc
+                    if 'Dipendenti' in df.columns: df.at[i, 'Dipendenti'] = d
                 bar.progress((i + 1) / len(df))
             st.session_state.results = df
             st.rerun()
 
-    # Download
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
     st.download_button("📥 Scarica CSV", csv, "export_aziende.csv", "text/csv")
