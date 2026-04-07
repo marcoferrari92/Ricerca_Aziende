@@ -23,24 +23,37 @@ if 'pos' not in st.session_state:
 # --- 3. FUNZIONI DI SCRAPING ---
 
 def scrape_sito_aziendale(url):
-    """FASE 1: Cerca P.IVA ed Email sul sito ufficiale."""
-    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D."
+    """FASE 1: Cerca P.IVA, Email, Fatturato e Capitale Sociale sul sito ufficiale."""
+    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D.", "N.D."
     if not url.startswith('http'): url = 'http://' + url
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text()
+        testo = soup.get_text(separator=' ') # Separatore per evitare parole attaccate
         
+        # 1. Partita IVA (11 cifre)
         piva = re.search(r'\b\d{11}\b', testo)
-        email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        # Tentativo di trovare fatturato se scritto esplicitamente nel sito
-        fatt = re.search(r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
         
-        return (piva.group(0) if piva else "N.D.", 
-                email.group(0) if email else "N.D.",
-                fatt.group(1) if fatt else "N.D.")
-    except: return "Errore", "N.D.", "N.D."
+        # 2. Email
+        email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+        
+        # 3. Fatturato (se presente nel testo)
+        fatt = re.search(r'Fatturato[:\s]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)', testo, re.I)
+        
+        # 4. Capitale Sociale (Pattern: Cap. Soc. seguito da cifre ed euro)
+        # Cerca varianti come: "Capitale Sociale i.v. € 100.000", "Cap. Soc. 50.000,00 Euro"
+        cap_pattern = r'(?:Capitale\s+Sociale|Cap\.\s*Soc\.)[:\s]*(?:i\.v\.)?[:\s]*([€\d.,\s]+(?:euro|€)?)'
+        cap_soc = re.search(cap_pattern, testo, re.I)
+        
+        return (
+            piva.group(0) if piva else "N.D.", 
+            email.group(0) if email else "N.D.",
+            fatt.group(1).strip() if fatt else "N.D.",
+            cap_soc.group(1).strip() if cap_soc else "N.D."
+        )
+    except: 
+        return "Errore", "N.D.", "N.D.", "N.D."
 
 def scrape_portale_camerale(piva):
     """FASE 2: Cerca dati ufficiali di bilancio (Versione Potenziata)."""
@@ -121,15 +134,24 @@ if not st.session_state.results.empty:
         if st.button("🌐 FASE 1: CERCA P.IVA SUI SITI", use_container_width=True):
             df = st.session_state.results.copy()
             bar = st.progress(0)
+    
+            # Assicurati che la colonna Capitale Sociale esista
+            if 'Capitale Sociale' not in df.columns:
+                df['Capitale Sociale'] = 'N.D.'
+
             for i, row in df.iterrows():
-                p, e, f = scrape_sito_aziendale(row['Sito Web'])
+                # Riceviamo 4 variabili dalla funzione
+                p, e, f, c = scrape_sito_aziendale(row['Sito Web'])
+        
                 df.at[i, 'Partita IVA'] = p
                 if row['Email'] == 'N.D.': df.at[i, 'Email'] = e
-                # Se vuoi aggiornare la colonna fatturato generica o una specifica
                 if 'Fatturato' in df.columns: df.at[i, 'Fatturato'] = f
+                df.at[i, 'Capitale Sociale'] = c
+        
                 bar.progress((i + 1) / len(df))
-            st.session_state.results = df
-            st.rerun()
+    
+    st.session_state.results = df
+    st.rerun()
             
     with c2:
         if st.button("📊 FASE 2: DATI CAMERALI (FATTURATO)", use_container_width=True):
