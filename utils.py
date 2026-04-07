@@ -96,12 +96,11 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione dati economica con supporto intervalli dipendenti."""
+    """FASE 2: Estrazione dati con Regex ultra-flessibile."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # Usiamo FatturatoItalia o l'URL che preferisci, la logica di estrazione è questa:
     url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
     
     try:
@@ -110,29 +109,27 @@ def scrape_camerale_data(piva):
         res = requests.get(url, headers=headers, timeout=15, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se c'è un redirect alla scheda azienda
         if "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
                 res = requests.get("https://www.fatturatoitalia.it" + link['href'], headers=headers, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Usiamo il separatore ' ' per mantenere la struttura leggibile
-        testo = soup.get_text(separator=' ', strip=True)
+        # Trasformiamo tutto il testo in una stringa unica con spazi singoli
+        testo = " ".join(soup.get_text().split())
 
-        # 1. Regex per il Fatturato (cerca 'Fatturato' seguito da cifre, punti e virgole)
-        # Esempio: "Fatturato 2023 € 142.939.543"
-        fatt_match = re.search(r'Fatturato\s*(?:\d{4})?[:\s]*€?\s*([\d.,]+)', testo, re.I)
+        # 1. CERCA FATTURATO (Più flessibile: ignora anni e simboli in mezzo)
+        # Cerca 'Fatturato', ignora tutto fino al primo simbolo € o numero con punti
+        fatt_match = re.search(r'Fatturato.*?€?\s*([\d.,]+)', testo, re.I)
         
-        # 2. Regex per i Dipendenti (cerca 'Dipendenti' seguito da 'da... a...' o un numero)
-        # Esempio: "N. Dipendenti da 250 a 499"
-        dip_match = re.search(r'(?:N\.\s*)?Dipendenti[:\s]*(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
+        # 2. CERCA DIPENDENTI (Cerca 'Dipendenti' e prende tutto il range o il numero)
+        # Gestisce: "Dipendenti 250", "da 250 a 499", "N. Dipendenti: 300"
+        dip_match = re.search(r'Dipendenti\s*(?:da\s*)?(\d+(?:\s*a\s*\d+)?|\d+)', testo, re.I)
 
-        f_val = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
-        # Se trova l'intervallo lo prende tutto, altrimenti N.D.
+        f_val = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
         d_val = dip_match.group(1).strip() if dip_match else "N.D."
 
         return f_val, d_val
 
     except Exception:
-        return "Errore Lettura", "N.D."
+        return "Non Trovato", "N.D."
