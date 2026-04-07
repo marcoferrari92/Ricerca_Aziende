@@ -2,6 +2,8 @@
 import requests
 import re
 import pandas as pd
+import random
+import urllib3
 from bs4 import BeautifulSoup
 from mapping import ATECO_MAP
 
@@ -95,49 +97,59 @@ def scrape_sito_aziendale(url):
 
 
 
+
+
 def scrape_camerale_data(piva):
-    """FASE 2: Ricerca profonda dei dati economici."""
+    """FASE 2: Estrazione dati con mascheramento IP e User-Agent."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
-        return "N.D.", "N.D."
+        return "P.IVA non valida", "N.D."
     
-    url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
+    # URL di ricerca su Aziende.it (molto meno protetto)
+    url = f"https://www.aziende.it/ricerca?q={piva_clean}"
     
+    # Lista di Browser diversi per ingannare il sito
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
+    ]
+
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9'
+            'User-Agent': random.choice(user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Referer': 'https://www.google.it/',
+            'DNT': '1',
+            'Connection': 'keep-alive'
         }
-        time.sleep(3)
-        res = requests.get(url, headers=headers, timeout=15, verify=False)
+
+        # PAUSA CASUALE: Importante per non farsi bannare (tra 4 e 7 secondi)
+        time.sleep(random.uniform(4, 7))
+
+        res = requests.get(url, headers=headers, timeout=20, verify=False)
+        
+        if res.status_code != 200:
+            return f"Sito Indisponibile ({res.status_code})", "N.D."
+
         soup = BeautifulSoup(res.text, 'html.parser')
-
-        # Se non siamo sulla scheda, cerchiamo il primo link aziendale
-        if "/azienda/" not in res.url:
-            link = soup.find('a', href=re.compile(r'/azienda/'))
-            if link:
-                full_link = "https://www.fatturatoitalia.it" + link['href'] if not link['href'].startswith('http') else link['href']
-                time.sleep(2)
-                res = requests.get(full_link, headers=headers, timeout=15, verify=False)
-                soup = BeautifulSoup(res.text, 'html.parser')
-
-        # Pulizia testo: rendiamo tutto una stringa piatta e senza spazi doppi
         testo = " ".join(soup.get_text(separator=' ').split())
 
-        # --- RICERCA FATTURATO ---
-        # Cerca 'Fatturato', salta fino a 50 caratteri qualsiasi, e prendi il primo numero formato da cifre e punti
-        fatt_search = re.search(r'Fatturato.{0,50}?(?:€|EUR)?\s*([\d.]{5,15})', testo, re.I)
+        # --- REGEX POTENZIATE ---
+        # Fatturato: cerca la parola e cattura il primo numero con punti
+        fatt_match = re.search(r'Fatturato.*?€?\s*([\d.]{6,15})', testo, re.I)
         
-        # --- RICERCA DIPENDENTI ---
-        # Cerca 'Dipendenti', salta fino a 30 caratteri, e prendi:
-        # 1. Il range "da X a Y"
-        # 2. Oppure un numero secco
-        dip_search = re.search(r'Dipendenti.{0,30}?(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
+        # Dipendenti: cerca il range o il numero
+        dip_match = re.search(r'Dipendenti.*?(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
 
-        fatturato = f"€ {fatt_search.group(1)}" if fatt_search else "Vedi online"
-        dipendenti = dip_search.group(1).strip() if dip_search else "N.D."
+        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
+        dipendenti = dip_match.group(1).strip() if dip_match else "N.D."
 
         return fatturato, dipendenti
 
+    except requests.exceptions.RequestException:
+        return "Errore Rete/VPN", "N.D."
     except Exception:
-        return "Errore connessione", "N.D."
+        return "Non trovato", "N.D."
