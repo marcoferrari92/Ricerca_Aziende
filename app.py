@@ -168,58 +168,37 @@ if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
 # --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
-import random
-import time
+from duckduckgo_search import DDGS 
 
 def analizza_sicurezza_ia_multi(nome_azienda):
-    # Semplifichiamo la query per non allarmare Google
-    # Cerchiamo solo su Google News generico invece di forzare 5 siti diversi
+    # Usiamo DuckDuckGo: non richiede API Key e non blocca l'IP facilmente come Google
     query = f'"{nome_azienda}" sicurezza lavoro infortunio spisal'
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    }
-
     try:
-        # 1. Aggiungiamo una pausa casuale per simulare un umano (1-3 secondi)
-        time.sleep(random.uniform(1.5, 3.0))
+        with DDGS() as ddgs:
+            # Cerchiamo i primi 5 risultati
+            results = [r for r in ddgs.text(query, region='it-it', safesearch='off', timelimit='y', max_results=5)]
         
-        # 2. Eseguiamo la ricerca
-        # Usiamo stop=5 per limitare il carico
-        search_results = search(query, num_results=5, lang="it", advanced=True)
-        
-        links = []
-        titles = []
-        snippets = []
+        if not results:
+            return "✅ Nessuna criticità rilevata nelle news recenti (Fonte: DDG Search).", "green"
 
-        for res in search_results:
-            links.append(res.url)
-            titles.append(res.title)
-            snippets.append(res.description)
-
-        if not links:
-            return "✅ Nessuna criticità rilevata nelle testate monitorate.", "green"
-
-        # 3. Invece di fare lo scraping di ogni sito (che causa l'errore 429), 
-        # analizziamo solo i TITOLI e gli SNIPPET che Google ci ha già dato.
-        # È molto più veloce e non verrai mai bloccato.
+        # Analizziamo i titoli e i riassunti (snippet) forniti dai risultati
+        testo_news = " ".join([r['title'] + " " + r['body'] for r in results]).lower()
         
-        testo_da_analizzare = " ".join(titles) + " " + " ".join(snippets)
-        testo_lower = testo_da_analizzare.lower()
+        # Parole chiave per far scattare l'alert
+        keywords_alert = ["infortunio", "incidente", "mortale", "grave", "caduta", "spisal", "sequestro", "indagine"]
         
-        keywords_pericolo = ["infortunio", "mortale", "incidente", "spisal", "procura", "indagine"]
-        
-        if any(key in testo_lower for key in keywords_pericolo):
-            # Troviamo il link più pertinente
-            link_pertinente = links[0]
-            return f"⚠️ ALERT SICUREZZA: Rilevate notizie critiche negli snippet di ricerca. Verificare qui: {link_pertinente}", "red"
-        
-        return "ℹ️ Menzioni generiche trovate, ma nessun alert di infortunio grave rilevato.", "blue"
-
+        if any(key in testo_news for key in keywords_alert):
+            # Prendiamo il link del primo risultato sospetto
+            return f"⚠️ ALERT SICUREZZA: Rilevate possibili criticità. Verificare qui: {results[0]['href']}", "red"
+        elif "formazione" in testo_news or "certificazione" in testo_news:
+            return f"ℹ️ INFO: Trovate menzioni relative a formazione o protocolli. Fonte: {results[0]['href']}", "orange"
+        else:
+            return "🧐 Monitoraggio completato: non sono emersi alert specifici sulla sicurezza.", "blue"
+            
     except Exception as e:
-        if "429" in str(e):
-            return "❌ Google ha temporaneamente limitato le ricerche per troppo traffico. Riprova tra qualche minuto.", "gray"
-        return f"⚠️ Errore nel monitoraggio: {str(e)}", "gray"
+        return f"⚠️ Servizio di monitoraggio news momentaneamente saturo. Riprova tra poco.", "gray"
+
 
 # --- 4. INTERFACCIA STREAMLIT ---
 st.title("🏢 Intelligence Aziendale Veneto")
