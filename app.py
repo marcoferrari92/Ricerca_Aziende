@@ -135,36 +135,54 @@ if not st.session_state.results.empty:
             df = st.session_state.results.copy()
             bar = st.progress(0)
     
-            # Assicurati che la colonna Capitale Sociale esista
+            # Assicurati che le colonne necessarie esistano per evitare KeyErrors
             if 'Capitale Sociale' not in df.columns:
                 df['Capitale Sociale'] = 'N.D.'
+            if 'Partita IVA' not in df.columns:
+                df['Partita IVA'] = 'N.D.'
 
             for i, row in df.iterrows():
-                # Riceviamo 4 variabili dalla funzione
+                # Chiamata alla funzione che restituisce 4 valori
                 p, e, f, c = scrape_sito_aziendale(row['Sito Web'])
         
                 df.at[i, 'Partita IVA'] = p
-                if row['Email'] == 'N.D.': df.at[i, 'Email'] = e
-                if 'Fatturato' in df.columns: df.at[i, 'Fatturato'] = f
+                # Aggiorna l'email solo se quella attuale è N.D.
+                if row.get('Email') == 'N.D.': 
+                    df.at[i, 'Email'] = e
+                
+                # Gestione Fatturato (colonna creata da fetch_data)
+                df.at[i, 'Fatturato'] = f
                 df.at[i, 'Capitale Sociale'] = c
         
                 bar.progress((i + 1) / len(df))
     
-    st.session_state.results = df
-    st.rerun()
+            # IMPORTANTE: Queste due righe devono stare DENTRO il blocco 'if st.button'
+            st.session_state.results = df
+            st.rerun()
             
     with c2:
         if st.button("📊 FASE 2: DATI CAMERALI (FATTURATO)", use_container_width=True):
             df = st.session_state.results.copy()
+            
+            # Controllo esistenza colonne per Fase 2
+            if 'Dipendenti' not in df.columns:
+                df['Dipendenti'] = 'N.D.'
+                
             bar = st.progress(0)
             for i, row in df.iterrows():
-                if row['Partita IVA'] not in ["N.D.", "Errore", "Non trovata"]:
-                    fc, d = scrape_portale_camerale(row['Partita IVA'])
-                    if 'Fatturato' in df.columns: df.at[i, 'Fatturato'] = fc
-                    if 'Dipendenti' in df.columns: df.at[i, 'Dipendenti'] = d
+                # Procediamo solo se abbiamo una P.IVA valida (11 cifre)
+                piva_check = str(row.get('Partita IVA', 'N.D.'))
+                if piva_check not in ["N.D.", "Errore", "Non trovata"] and len(piva_check) == 11:
+                    fc, d = scrape_portale_camerale(piva_check)
+                    df.at[i, 'Fatturato'] = fc
+                    df.at[i, 'Dipendenti'] = d
+                
                 bar.progress((i + 1) / len(df))
+            
             st.session_state.results = df
             st.rerun()
 
+    # Sezione Download
+    st.divider()
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica CSV", csv, "export_aziende.csv", "text/csv")
+    st.download_button("📥 Scarica CSV Completo", csv, "export_aziende.csv", "text/csv", use_container_width=True)
