@@ -5,6 +5,7 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import re
+import urllib3
 from bs4 import BeautifulSoup
 import time
 
