@@ -77,29 +77,60 @@ if 'pos' not in st.session_state:
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
-def scrape_azienda_info(url):
-    """Visita il sito web per estrarre P.IVA ed Email."""
-    if not url or url == 'N.D.':
+def scrape_camerale_data(piva):
+    """Interroga un portale di dati aziendali pubblici usando la P.IVA."""
+    if not piva or piva == "Non trovata" or len(piva) != 11:
         return "N.D.", "N.D."
-    if not url.startswith('http'):
-        url = 'http://' + url
+    
+    # Portale di appoggio (Esempio: ReportAziende usa la P.IVA nell'URL)
+    search_url = f"https://www.reportaziende.it/ricerca?q={piva}"
+    
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=8)
+        response = requests.get(search_url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         testo = soup.get_text()
 
-        # Regex per Partita IVA
-        piva_match = re.search(r'\b\d{11}\b', testo)
-        piva = piva_match.group(0) if piva_match else "Non trovata"
+        # Regex per Fatturato (cerca cifre seguite da € o parole come 'milioni')
+        # Questi pattern dipendono da come il sito scelto visualizza i dati
+        fatt_pattern = r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))'
+        dip_pattern = r'Dipendenti[:\s]*(\d+)'
 
-        # Regex per Email
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "Non trovata"
+        fatt_match = re.search(fatt_pattern, testo, re.IGNORECASE)
+        dip_match = re.search(dip_pattern, testo, re.IGNORECASE)
 
-        return piva, email
+        fatturato = fatt_match.group(1) if fatt_match else "Vedi scheda"
+        dipendenti = dip_match.group(1) if dip_match else "Vedi scheda"
+
+        return fatturato, dipendenti
     except:
-        return "Errore Sito", "Errore Sito"
+        return "N.D.", "N.D."
+
+# --- Modifica nel ciclo di scraping in app.py ---
+if st.button("🔍 ESTRAI DATI COMPLETI (P.IVA + BILANCIO)", use_container_width=True):
+    df_work = st.session_state.results.copy()
+    progress_bar = st.progress(0)
+    status = st.empty()
+    
+    for i, row in df_work.iterrows():
+        if row['Sito Web'] != 'N.D.':
+            status.text(f"Analisi sito aziendale per P.IVA: {row['Ragione Sociale']}...")
+            # 1. Troviamo la P.IVA dal sito ufficiale
+            piva, email_web = scrape_azienda_info(row['Sito Web'])
+            df_work.at[i, 'Partita IVA'] = piva
+            
+            # 2. Se abbiamo la P.IVA, cerchiamo il fatturato sul portale camerale
+            if piva != "Non trovata":
+                status.text(f"Recupero dati camerali per P.IVA {piva}...")
+                fatt, dip = scrape_camerale_data(piva)
+                df_work.at[i, 'Fatturato'] = fatt
+                df_work.at[i, 'Dipendenti'] = dip
+        
+        progress_bar.progress((i + 1) / len(df_work))
+    
+    st.session_state.results = df_work
+    st.success("✅ Database arricchito con dati di bilancio!")
+    st.rerun()
 
 # --- 4. INTERFACCIA ---
 st.title("🏭 Business Data Extractor")
