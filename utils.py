@@ -93,62 +93,50 @@ def scrape_sito_aziendale(url):
         return "Errore Sito", "N.D."
 
 
-
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione da Ufficio Camerale con gestione Timeout."""
+    """FASE 2: Estrazione da FatturatoItalia.it tramite Partita IVA."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # Proviamo ad andare direttamente alla pagina dell'azienda se possibile, 
-    # o usiamo la ricerca rapida
-    url = f"https://www.ufficiocamerale.it/ricerca-aziende?q={piva_clean}"
+    # FatturatoItalia permette la ricerca diretta tramite questo pattern di URL
+    url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
     
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9',
-            'Referer': 'https://www.google.it/'
+            'Accept-Language': 'it-IT,it;q=0.9'
         }
         
-        # Aspetta un tempo casuale per simulare un umano (tra 3 e 5 secondi)
-        import random
-        time.sleep(random.uniform(3, 5))
+        # Pausa di sicurezza
+        time.sleep(2)
+        res = requests.get(url, headers=headers, timeout=12, verify=False)
         
-        # Timeout alzato a 20 secondi per gestire i rallentamenti del server
-        res = requests.get(url, headers=headers, timeout=20, verify=False)
-        
-        if res.status_code == 403:
-            return "Accesso Negato (403)", "N.D."
-            
+        if res.status_code != 200:
+            return "Sito Non Disponibile", "N.D."
+
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se siamo ancora nella pagina di ricerca, proviamo a prendere il primo risultato
-        if "Risultati della ricerca" in res.text or not soup.find('h1'):
+        # Se il sito mostra una lista di risultati, prendiamo il primo
+        if "risultati" in res.text.lower() or "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
-                full_link = "https://www.ufficiocamerale.it" + link['href'] if not link['href'].startswith('http') else link['href']
-                time.sleep(2)
-                res = requests.get(full_link, headers=headers, timeout=20, verify=False)
+                full_link = "https://www.fatturatoitalia.it" + link['href'] if not link['href'].startswith('http') else link['href']
+                time.sleep(1)
+                res = requests.get(full_link, headers=headers, timeout=12, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Estrazione dati basata sul testo della pagina
         testo = soup.get_text(separator='|', strip=True)
 
-        # Regex flessibili
+        # Regex specifica per FatturatoItalia
+        # Cercano i pattern: "Fatturato: € 1.234.567" e "Dipendenti: 50"
         fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
         dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
 
-        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
-        dipendenti = dip_match.group(1) if dip_match else "N.D."
+        f_val = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
+        d_val = dip_match.group(1) if dip_match else "N.D."
 
-        return fatturato, dipendenti
+        return f_val, d_val
 
-    except requests.exceptions.Timeout:
-        return "Timeout (Sito Lento)", "N.D."
-    except Exception as e:
+    except Exception:
         return "Errore Connessione", "N.D."
-        
-    except Exception as e:
-        # Questo cattura errori di connessione o timeout
-        return "Errore Timeout", "N.D."
