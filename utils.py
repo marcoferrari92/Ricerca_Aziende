@@ -100,56 +100,56 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione dati con mascheramento IP e User-Agent."""
+    """FASE 2: Estrazione mirata per la struttura di ReportAziende (Landi Renzo/Lovato)."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
-        return "P.IVA non valida", "N.D."
+        return "N.D.", "N.D."
     
-    # URL di ricerca su Aziende.it (molto meno protetto)
-    url = f"https://www.aziende.it/ricerca?q={piva_clean}"
+    url = f"https://www.reportaziende.it/ricerca?q={piva_clean}"
     
-    # Lista di Browser diversi per ingannare il sito
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
-    ]
-
     try:
         headers = {
-            'User-Agent': random.choice(user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
-            'Referer': 'https://www.google.it/',
-            'DNT': '1',
-            'Connection': 'keep-alive'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Referer': 'https://www.google.it/'
         }
-
-        # PAUSA CASUALE: Importante per non farsi bannare (tra 4 e 7 secondi)
-        time.sleep(random.uniform(4, 7))
-
-        res = requests.get(url, headers=headers, timeout=20, verify=False)
         
-        if res.status_code != 200:
-            return f"Sito Indisponibile ({res.status_code})", "N.D."
-
+        # Pausa per evitare blocchi
+        time.sleep(2)
+        res = requests.get(url, headers=headers, timeout=15, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = " ".join(soup.get_text(separator=' ').split())
 
-        # --- REGEX POTENZIATE ---
-        # Fatturato: cerca la parola e cattura il primo numero con punti
-        fatt_match = re.search(r'Fatturato.*?€?\s*([\d.]{6,15})', testo, re.I)
-        
-        # Dipendenti: cerca il range o il numero
-        dip_match = re.search(r'Dipendenti.*?(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
+        # Se non siamo nella scheda finale, cerchiamo il link dell'azienda
+        if "Dati della società" not in res.text:
+            link = soup.find('a', href=re.compile(r'/azienda/'))
+            if link:
+                res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, verify=False)
+                soup = BeautifulSoup(res.text, 'html.parser')
 
-        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
-        dipendenti = dip_match.group(1).strip() if dip_match else "N.D."
+        # --- ESTRAZIONE DATI DALLE TABELLE ---
+        fatturato = "N.D."
+        dipendenti = "N.D."
+
+        # Cerchiamo tutte le righe delle tabelle (tr)
+        for row in soup.find_all('tr'):
+            testo_riga = row.get_text(strip=True).lower()
+            
+            # Se la riga contiene "fatturato", prendiamo il valore nella cella successiva (td)
+            if 'fatturato' in testo_riga and fatturato == "N.D.":
+                cols = row.find_all('td')
+                if len(cols) > 1:
+                    fatturato = cols[1].get_text(strip=True)
+                else:
+                    # Se non è in una tabella classica, proviamo con regex sul testo della riga
+                    match = re.search(r'([\d.,]+)', row.get_text())
+                    if match: fatturato = f"€ {match.group(1)}"
+
+            # Se la riga contiene "dipendenti"
+            if 'dipendenti' in testo_riga and dipendenti == "N.D.":
+                cols = row.find_all('td')
+                if len(cols) > 1:
+                    dipendenti = cols[1].get_text(strip=True)
 
         return fatturato, dipendenti
 
-    except requests.exceptions.RequestException:
-        return "Errore Rete/VPN", "N.D."
     except Exception:
-        return "Non trovato", "N.D."
+        return "Errore Lettura", "N.D."
