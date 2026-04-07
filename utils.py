@@ -69,32 +69,37 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
 # --- 3. FUNZIONI DI SCRAPING ---
 
 def scrape_sito_aziendale(url):
-    """FASE 1: Cerca P.IVA, Email, Fatturato e Capitale Sociale sul sito ufficiale."""
-    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D.", "N.D."
-    if not url.startswith('http'): url = 'http://' + url
+    """Cerca P.IVA, Email, Fatturato e Capitale Sociale sul sito ufficiale."""
+    if not url or url == 'N.D.': 
+        return "N.D.", "N.D.", "N.D.", "N.D."
+    
+    if not url.startswith('http'): 
+        url = 'http://' + url
+        
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        res = requests.get(url, headers=headers, timeout=5)
+        # Aumentiamo leggermente il timeout a 8 per evitare "Errore" su siti lenti
+        res = requests.get(url, headers=headers, timeout=8, verify=False) 
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text(separator=' ', strip=True) # Separatore spaziato per evitare testi incollati
+        testo = soup.get_text(separator=' ', strip=True)
         
         # 1. Partita IVA
-        piva_match = re.search(r'\b\d{11}\b', testo)
-        piva = piva_match.group(0) if piva_match else "N.D."
+        piva = re.search(r'\b\d{11}\b', testo)
         
         # 2. Email
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "N.D."
+        email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
         
-        # 3. Fatturato (dal sito)
-        fatt_match = re.search(r'fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
-        fatt = fatt_match.group(1) if fatt_match else "N.D."
+        # 3. Fatturato
+        fatt = re.search(r'fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
         
-        # 4. Capitale Sociale
-        cap_pattern = r'(?:Capitale\s+Sociale|Cap\.?\s*Soc\.?)\s*(?:i\.v\.)?[:\s]*(?:euro|€)?\s*([\d.,]+(?:\s*(?:euro|€|mila|mln))?)'
-        cap_match = re.search(cap_pattern, testo, re.I)
-        cap = cap_match.group(1).strip() if cap_match else "N.D."
+        # 4. Capitale Sociale (Aggiunto)
+        cap_match = re.search(r'(?:Capitale\s+Sociale|Cap\.?\s*Soc\.?)\s*(?:i\.v\.)?[:\s]*(?:euro|€)?\s*([\d.,]+(?:\s*(?:euro|€|mila|mln))?)', testo, re.I)
         
-        return piva, email, fatt, cap
-    except: 
+        return (
+            piva.group(0) if piva else "N.D.", 
+            email.group(0) if email else "N.D.", 
+            fatt.group(1) if fatt else "N.D.",
+            cap_match.group(1).strip() if cap_match else "N.D."
+        )
+    except:
         return "Errore", "N.D.", "N.D.", "N.D."
