@@ -101,19 +101,24 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         for e in elements:
             t = e.get('tags', {})
             if 'name' in t:
-                # Logica per estrarre la tipologia più precisa possibile
-                tipo = t.get('industrial', t.get('shop', t.get('craft', t.get('amenity', 'Azienda'))))
+                nome_azienda = t.get('name')
+                citta = t.get('addr:city', 'N.D.')
+                
+                # Parametro per ricerca esterna (Ragione Sociale + Città)
+                query_societaria = f"{nome_azienda} {citta}".replace(" ", "+")
                 
                 ris.append({
-                    'Ragione Sociale': t.get('name'),
-                    'Comune': t.get('addr:city', 'N.D.'),
+                    'Ragione Sociale': nome_azienda,
+                    'Comune': citta,
                     'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D.",
-                    'Attività Specifica': tipo.replace('_', ' ').title(),
+                    'Attività Specifica': t.get('industrial', t.get('shop', t.get('amenity', 'Azienda'))).replace('_', ' ').title(),
                     'Produzione/Prodotti': t.get('produce', t.get('product', 'N.D.')),
                     'Sito Web': t.get('website', 'N.D.'),
-                    'Email': t.get('email', 'N.D.'),
                     'Telefono': t.get('phone', t.get('contact:phone', 'N.D.')),
-                    'Orari': t.get('opening_hours', 'N.D.'),
+                    # --- NUOVI PARAMETRI DI RICERCA SOCIETARIA ---
+                    'Ricerca Fatturato (Google)': f"https://www.google.com/search?q={query_societaria}+fatturato+dipendenti",
+                    'OpenCorporates': f"https://opencorporates.com/companies?q={nome_azienda.replace(' ', '+')}&utf8=%E2%9C%93",
+                    # ---------------------------------------------
                     'lat': e.get('lat') or e.get('center', {}).get('lat'),
                     'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
