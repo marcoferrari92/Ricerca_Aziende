@@ -106,9 +106,12 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
                 comune = f"{t.get('addr:city', 'N.D.')}"
                 cap = f"{t.get('addr:postcode', 'N.D.')}"
                 indirizzo = f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D."
-                attivita = t.get('industrial', t.get('shop', t.get('amenity', t.get('craft', 'Azienda')))).replace('_', ' ').title()
-                sito = t.get('website', 'N.D.')
-                email = t.get('email', 'N.D.')
+                attivita = f"{t.get('industrial', t.get('shop', t.get('amenity', t.get('craft', 'Azienda')))).replace('_', ' ').title()}"
+                sito = f"{t.get('website', 'N.D.')}"
+                email = f"{t.get('email', 'N.D.')}"
+                linkedin = f"{t.get('contact:linkedin', t.get('linkedin', 'N.D.'))}"
+                operatore = f"{t.get('operator', 'N.D.')}"
+                brand = f"{t.get('brand', 'N.D.')}"
                 
                 ris.append({
                     'Ragione Sociale': nome,
@@ -118,6 +121,9 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
                     'Attività': attivita,
                     'Sito Web': sito,
                     'Email': email,
+                    'LinkedIn': linkedin,
+                    'Proprietà': operatore,
+                    'Brand': brand,
                     'lat': e.get('lat') or e.get('center', {}).get('lat'),
                     'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
