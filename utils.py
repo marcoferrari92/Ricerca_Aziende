@@ -66,40 +66,22 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         return pd.DataFrame()
 
 
-# --- 3. FUNZIONI DI SCRAPING ---
-
 def scrape_sito_aziendale(url):
-    """Cerca P.IVA, Email, Fatturato e Capitale Sociale sul sito ufficiale."""
-    if not url or url == 'N.D.': 
-        return "N.D.", "N.D.", "N.D.", "N.D."
-    
-    if not url.startswith('http'): 
-        url = 'http://' + url
-        
+    """FASE 1: Cerca P.IVA ed Email sul sito ufficiale."""
+    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D."
+    if not url.startswith('http'): url = 'http://' + url
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        # Aumentiamo leggermente il timeout a 8 per evitare "Errore" su siti lenti
-        res = requests.get(url, headers=headers, timeout=8, verify=False) 
+        res = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text(separator=' ', strip=True)
+        testo = soup.get_text()
         
-        # 1. Partita IVA
         piva = re.search(r'\b\d{11}\b', testo)
-        
-        # 2. Email
         email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+        # Tentativo di trovare fatturato se scritto esplicitamente nel sito (es. "Fatturato 2024: ...")
+        fatt = re.search(r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
         
-        # 3. Fatturato
-        fatt = re.search(r'fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
-        
-        # 4. Capitale Sociale (Aggiunto)
-        cap_match = re.search(r'(?:Capitale\s+Sociale|Cap\.?\s*Soc\.?)\s*(?:i\.v\.)?[:\s]*(?:euro|€)?\s*([\d.,]+(?:\s*(?:euro|€|mila|mln))?)', testo, re.I)
-        
-        return (
-            piva.group(0) if piva else "N.D.", 
-            email.group(0) if email else "N.D.", 
-            fatt.group(1) if fatt else "N.D.",
-            cap_match.group(1).strip() if cap_match else "N.D."
-        )
-    except:
-        return "Errore", "N.D.", "N.D.", "N.D."
+        return (piva.group(0) if piva else "N.D.", 
+                email.group(0) if email else "N.D.",
+                fatt.group(1) if fatt else "N.D.")
+    except: return "Errore", "N.D.", "N.D."
