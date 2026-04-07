@@ -96,49 +96,43 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione da FatturatoItalia.it tramite Partita IVA."""
+    """FASE 2: Estrazione dati economica con supporto intervalli dipendenti."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # FatturatoItalia permette la ricerca diretta tramite questo pattern di URL
+    # Usiamo FatturatoItalia o l'URL che preferisci, la logica di estrazione è questa:
     url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
     
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9'
-        }
-        
-        # Pausa di sicurezza
-        time.sleep(2)
-        res = requests.get(url, headers=headers, timeout=12, verify=False)
-        
-        if res.status_code != 200:
-            return "Sito Non Disponibile", "N.D."
-
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        time.sleep(3)
+        res = requests.get(url, headers=headers, timeout=15, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se il sito mostra una lista di risultati, prendiamo il primo
-        if "risultati" in res.text.lower() or "/azienda/" not in res.url:
+        # Se c'è un redirect alla scheda azienda
+        if "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
-                full_link = "https://www.fatturatoitalia.it" + link['href'] if not link['href'].startswith('http') else link['href']
-                time.sleep(1)
-                res = requests.get(full_link, headers=headers, timeout=12, verify=False)
+                res = requests.get("https://www.fatturatoitalia.it" + link['href'], headers=headers, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
-        testo = soup.get_text(separator='|', strip=True)
+        # Usiamo il separatore ' ' per mantenere la struttura leggibile
+        testo = soup.get_text(separator=' ', strip=True)
 
-        # Regex specifica per FatturatoItalia
-        # Cercano i pattern: "Fatturato: € 1.234.567" e "Dipendenti: 50"
-        fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
-        dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
+        # 1. Regex per il Fatturato (cerca 'Fatturato' seguito da cifre, punti e virgole)
+        # Esempio: "Fatturato 2023 € 142.939.543"
+        fatt_match = re.search(r'Fatturato\s*(?:\d{4})?[:\s]*€?\s*([\d.,]+)', testo, re.I)
+        
+        # 2. Regex per i Dipendenti (cerca 'Dipendenti' seguito da 'da... a...' o un numero)
+        # Esempio: "N. Dipendenti da 250 a 499"
+        dip_match = re.search(r'(?:N\.\s*)?Dipendenti[:\s]*(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
 
         f_val = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
-        d_val = dip_match.group(1) if dip_match else "N.D."
+        # Se trova l'intervallo lo prende tutto, altrimenti N.D.
+        d_val = dip_match.group(1).strip() if dip_match else "N.D."
 
         return f_val, d_val
 
     except Exception:
-        return "Errore Connessione", "N.D."
+        return "Errore Lettura", "N.D."
