@@ -180,7 +180,7 @@ def analizza_sicurezza_ia_multi(nome_azienda):
     ]
     
     # Query: (Fonti) + "Nome Azienda" + (Keywords Sicurezza)
-    query = f'({" OR ".join(fonti)}) "{nome_azienda}" "sicurezza sul lavoro" OR "infortunio" OR "ispettorato" OR "spisal"'
+    query = f'({" OR ".join(fonti)}) "{nome_azienda}" "sicurezza sul lavoro" OR "infortunio" OR "ispettorato" OR "spisal" OR "incidente"'
     
     try:
         # Cerchiamo i primi 3 link più rilevanti tra tutte le fonti
