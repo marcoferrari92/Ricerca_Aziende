@@ -175,7 +175,8 @@ def analizza_sicurezza_ia_multi(nome_azienda):
         "site:ilgiornaledivicenza.it", 
         "site:ilgazzettino.it", 
         "site:corrieredelveneto.corriere.it",
-        "site:vicenzatoday.it"
+        "site:vicenzatoday.it",
+        "site:www.vicenzatoday.it"
     ]
     
     # Query: (Fonti) + "Nome Azienda" + (Keywords Sicurezza)
