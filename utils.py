@@ -68,68 +68,50 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         return pd.DataFrame()
 
 
-def scrape_sito_aziendale(url):
-    """Fase 1: Estrae P.IVA ed Email pulendo i caratteri sporchi."""
-    if not url or url == 'N.D.': return "N.D.", "N.D."
-    if not url.startswith('http'): url = 'http://' + url
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        # verify=False ignora errori di certificato SSL (molto comune in Italia)
-        res = requests.get(url, headers=headers, timeout=8, verify=False)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # separator=' ' evita che le parole si attacchino
-        testo = soup.get_text(separator=' ', strip=True)
-
-        # Cerchiamo la P.IVA: 11 cifre, ma puliamo eventuali prefissi "IT"
-        piva_match = re.search(r'\b(?:IT)?(\d{11})\b', testo, re.I)
-        piva = piva_match.group(1) if piva_match else "Non trovata"
-
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "N.D."
-
-        return piva, email
-    except:
-        return "Errore Sito", "N.D."
-
-
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione da FatturatoItalia.it tramite Partita IVA."""
+    """FASE 2: Estrazione da FatturatoItalia con Headers 'Umani'."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # FatturatoItalia permette la ricerca diretta tramite questo pattern di URL
+    # URL diretto alla ricerca di FatturatoItalia
     url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
     
     try:
+        # Creiamo una sessione per gestire i cookie automaticamente
+        session = requests.Session()
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept-Language': 'it-IT,it;q=0.9'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+            'Referer': 'https://www.google.it/',
+            'Connection': 'keep-alive'
         }
+
+        # Aspetta un tempo variabile (3-5 sec) per non sembrare un robot
+        time.sleep(3)
         
-        # Pausa di sicurezza
-        time.sleep(2)
-        res = requests.get(url, headers=headers, timeout=12, verify=False)
+        # Facciamo la richiesta ignorando gli errori SSL (verify=False)
+        res = session.get(url, headers=headers, timeout=15, verify=False)
         
         if res.status_code != 200:
-            return "Sito Non Disponibile", "N.D."
+            return f"Blocco {res.status_code}", "N.D."
 
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se il sito mostra una lista di risultati, prendiamo il primo
-        if "risultati" in res.text.lower() or "/azienda/" not in res.url:
+        # Se il sito non ci manda direttamente alla scheda, cerchiamo il primo link aziendale
+        if "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
-                full_link = "https://www.fatturatoitalia.it" + link['href'] if not link['href'].startswith('http') else link['href']
-                time.sleep(1)
-                res = requests.get(full_link, headers=headers, timeout=12, verify=False)
+                full_link = "https://www.fatturatoitalia.it" + link['href']
+                time.sleep(2)
+                res = session.get(full_link, headers=headers, timeout=15, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
         testo = soup.get_text(separator='|', strip=True)
 
-        # Regex specifica per FatturatoItalia
-        # Cercano i pattern: "Fatturato: € 1.234.567" e "Dipendenti: 50"
+        # Estrazione dati con Regex flessibile
         fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
         dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
 
@@ -138,5 +120,6 @@ def scrape_camerale_data(piva):
 
         return f_val, d_val
 
-    except Exception:
-        return "Errore Connessione", "N.D."
+    except Exception as e:
+        # Se fallisce ancora, riportiamo il tipo di errore per debuggare
+        return "Bloccato", "N.D."
