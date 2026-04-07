@@ -68,6 +68,33 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         return pd.DataFrame()
 
 
+def scrape_sito_aziendale(url):
+    """Fase 1: Estrae P.IVA ed Email dal sito ufficiale dell'azienda."""
+    if not url or url == 'N.D.':
+        return "N.D.", "N.D."
+    if not url.startswith('http'):
+        url = 'http://' + url
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=8)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        testo = soup.get_text()
+
+        # Regex per Partita IVA (11 cifre)
+        piva_match = re.search(r'\b\d{11}\b', testo)
+        piva = piva_match.group(0) if piva_match else "Non trovata"
+
+        # Regex per Email
+        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+        email = email_match.group(0) if email_match else "Non trovata"
+
+        return piva, email
+    except:
+        return "Errore Sito", "N.D."
+
+
+
+
 def scrape_camerale_data(piva):
     """FASE 2: Estrazione da FatturatoItalia.it tramite Partita IVA."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
