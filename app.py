@@ -107,6 +107,10 @@ if not st.session_state.results.empty:
         st.session_state.results = df_work
         status_msg.success("✅ Arricchimento completato!")
         st.rerun()
+        # Sotto la tabella, aggiungiamo una casella di testo per il debug
+        st.subheader("🕵️ Debug: Cosa ha visto il Bot?")
+        testo_visto = df_work['Fatturato'].iloc[0] # Prende il testo della prima azienda analizzata
+        st.text_area("Contenuto HTML/Testo scaricato:", testo_visto, height=400)
         
 
     # Download
