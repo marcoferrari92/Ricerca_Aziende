@@ -95,32 +95,41 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione da Ufficio Camerale tramite Partita IVA."""
+    """FASE 2: Estrazione da Ufficio Camerale con Headers avanzati."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "P.IVA non valida", "N.D."
     
-    # URL di ricerca di Ufficio Camerale
+    # URL di ricerca specifico
     search_url = f"https://www.ufficiocamerale.it/ricerca-aziende?q={piva_clean}"
     
     try:
+        # Usiamo un Session object per gestire meglio i cookie
+        session = requests.Session()
+        
+        # Headers che imitano perfettamente un browser Chrome su Windows
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Referer': 'https://www.ufficiocamerale.it/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Cache-Control': 'max-age=0',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': 'https://www.google.com/'
         }
         
-        # Pausa per non essere identificati come bot aggressivi
-        time.sleep(2.5) 
-        res = requests.get(search_url, headers=headers, timeout=12, verify=False)
+        # Pausa più lunga: Ufficio Camerale odia gli script veloci
+        time.sleep(3.5) 
+        
+        # Eseguiamo la ricerca
+        res = session.get(search_url, headers=headers, timeout=15, verify=False)
         
         if res.status_code != 200:
-            return "Errore Accesso", "N.D."
+            return f"Blocco Sito ({res.status_code})", "N.D."
 
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Ufficio Camerale spesso ti manda a una lista di risultati.
-        # Dobbiamo trovare il primo link che punta alla scheda azienda.
+        # Cerchiamo il link alla scheda azienda (solitamente nel primo h3 o link con classe specifica)
         link_scheda = soup.find('a', href=re.compile(r'/azienda/'))
         
         if link_scheda:
@@ -128,18 +137,18 @@ def scrape_camerale_data(piva):
             if not url_finale.startswith('http'):
                 url_finale = "https://www.ufficiocamerale.it" + url_finale
             
-            # Seconda chiamata per entrare nella scheda vera e propria
-            time.sleep(1.5)
-            res = requests.get(url_finale, headers=headers, timeout=12, verify=False)
+            # Pausa tra ricerca e scheda
+            time.sleep(2)
+            res = session.get(url_finale, headers=headers, timeout=15, verify=False)
             soup = BeautifulSoup(res.text, 'html.parser')
 
+        # Estrazione dati con selettori più precisi
+        # Ufficio Camerale usa spesso etichette chiare nel testo
         testo = soup.get_text(separator='|', strip=True)
 
-        # Cerchiamo il Fatturato (Ufficio Camerale usa spesso formati come 'Fatturato: € 1.234.567')
-        # La regex cerca la parola fatturato e il primo valore monetario che segue
+        # Cerchiamo il fatturato (Regex specifica per il loro formato € 1.234.567)
         fatt_match = re.search(r'Fatturato[:\s|]*€?\s*([\d.,]+)', testo, re.I)
-        
-        # Cerchiamo i Dipendenti
+        # Cerchiamo i dipendenti
         dip_match = re.search(r'Dipendenti[:\s|]*(\d+)', testo, re.I)
 
         fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
@@ -148,4 +157,5 @@ def scrape_camerale_data(piva):
         return fatturato, dipendenti
         
     except Exception as e:
-        return "Errore Ricerca", "N.D."
+        # Questo cattura errori di connessione o timeout
+        return "Errore Timeout", "N.D."
