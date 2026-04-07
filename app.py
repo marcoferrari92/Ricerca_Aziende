@@ -1,8 +1,9 @@
 import streamlit as st
 import requests
 import pandas as pd
+import time
 
-# Dizionario ATECO -> OpenStreetMap (Invariato)
+# 1. MAPPATURA INTEGRALE ATECO -> OPENSTREETMAP TAGS
 ATECO_MAP = {
     "A - AGRICOLTURA, SILVICOLTURA E PESCA": ["farm", "farmyard", "greenhouse", "forestry", "vineyard", "aquaculture"],
     "B - ATTIVITA' ESTRATTIVE": ["quarry", "mine", "oil_well"],
@@ -27,18 +28,20 @@ ATECO_MAP = {
     "V - ATTIVITA' DI ORGANIZZAZIONI EXTRATERRITORIALI": ["embassy", "office=ngo"]
 }
 
+# 2. FUNZIONE DI RICERCA POTENZIATA
 def fetch_data_multi(zona, macrosettori_scelti):
-    # Usiamo un endpoint diverso (Kumi Systems) che spesso è più veloce
+    # Endpoint più stabile e veloce
     url = "https://overpass.kumi.systems/api/interpreter"
     
+    # Raccogliamo i tag senza duplicati
     tutti_i_tag = []
     for ms in macrosettori_scelti:
         tutti_i_tag.extend(ATECO_MAP[ms])
-    
     regex_query = "|".join(set(tutti_i_tag))
     
+    # Query con timeout esteso e istruzioni chiare
     query = f"""
-    [out:json][timeout:180]; // Aumentato il timeout a 180 secondi
+    [out:json][timeout:180];
     area["name"="{zona}"]["admin_level"~"4|6|8"]->.searchArea;
     (
       nwr["shop"~"{regex_query}"](area.searchArea);
@@ -49,30 +52,23 @@ def fetch_data_multi(zona, macrosettori_scelti):
       nwr["office"~"{regex_query}"](area.searchArea);
     );
     out center;
-
     """
+    
     try:
-        response = requests.get(url, params={'data': query})
+        response = requests.get(url, params={'data': query}, timeout=190)
         
-        # CONTROLLO CRITICO: Verifichiamo se la risposta è davvero un JSON
-        if response.status_code == 200:
-            try:
-                data = response.json()
-            except ValueError:
-                st.error("Il server ha risposto in modo errato (non JSON). Riprova tra un istante.")
-                return pd.DataFrame()
-        elif response.status_code == 429:
-            st.error("Troppe richieste! Attendi 30 secondi prima di riprovare.")
+        if response.status_code == 429:
+            st.error("⚠️ Troppe richieste al server. Attendi un minuto.")
             return pd.DataFrame()
-        else:
-            st.error(f"Errore del server Overpass: {response.status_code}")
+        
+        # Tentativo di decodifica JSON con gestione errore "line 1 column 1"
+        try:
+            data = response.json()
+        except ValueError:
+            st.error("❌ Il server ha restituito un errore di traffico. Riprova tra poco o riduci i settori selezionati.")
             return pd.DataFrame()
 
         elements = data.get('elements', [])
-        # ... resto del codice per estrarre i risultati ...
-    try:
-        response = requests.get(url, params={'data': query})
-        elements = response.json().get('elements', [])
         risultati = []
         for el in elements:
             t = el.get('tags', {})
@@ -82,52 +78,70 @@ def fetch_data_multi(zona, macrosettori_scelti):
                 risultati.append({
                     'Ragione Sociale': t.get('name'),
                     'Comune': t.get('addr:city', 'N.D.'),
-                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip(),
+                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or 'N.D.',
                     'Sito Web': t.get('website', 'N.D.'),
                     'Telefono': t.get('phone', 'N.D.'),
                     'LAT': lat, 'LON': lon,
-                    'Categoria': t.get('office', t.get('industrial', t.get('shop', 'Altro')))
+                    'Categoria OSM': t.get('office', t.get('industrial', t.get('shop', 'Altro')))
                 })
         return pd.DataFrame(risultati)
+    
+    except requests.exceptions.Timeout:
+        st.error("⏳ La ricerca ha richiesto troppo tempo. Prova a selezionare meno settori.")
+        return pd.DataFrame()
     except Exception as e:
-        st.error(f"Errore nella ricerca: {e}")
+        st.error(f"⚠️ Errore imprevisto: {e}")
         return pd.DataFrame()
 
-# --- UI STREAMLIT ---
-st.set_page_config(page_title="Business Finder Pro", layout="wide")
+# 3. INTERFACCIA STREAMLIT
+st.set_page_config(page_title="Business Finder Pro", layout="wide", page_icon="🏢")
+
 st.title("🏢 Business Finder Multi-ATECO")
+st.markdown("Cerca aziende filtrando per uno o più macrosettori ATECO ufficiali.")
 
 with st.sidebar:
-    st.header("🔍 Filtri")
-    zona = st.text_input("Località", "Vicenza")
+    st.header("🔍 Parametri")
+    zona = st.text_input("Località (Città o Provincia)", "Vicenza")
     
-    # QUI IL CAMBIO: st.multiselect invece di selectbox
     macrosettori_scelti = st.multiselect(
-        "Seleziona uno o più Macrosettori ATECO",
+        "Seleziona Macrosettori ATECO",
         options=list(ATECO_MAP.keys()),
-        default=["A - AGRICOLTURA, SILVICOLTURA E PESCA"] # Opzione predefinita
+        default=["A - AGRICOLTURA, SILVICOLTURA E PESCA"]
     )
     
-    cerca = st.button("🚀 Avvia Ricerca Combinata")
+    st.divider()
+    cerca = st.button("🚀 AVVIA RICERCA", use_container_width=True)
+    st.caption("Nota: Selezionare troppi settori insieme può rallentare il server.")
 
 if cerca:
     if not macrosettori_scelti:
-        st.warning("Seleziona almeno un settore!")
+        st.warning("Seleziona almeno un settore prima di iniziare.")
     else:
-        with st.spinner("Ricerca in corso su più settori..."):
+        with st.spinner(f"Ricerca in corso a {zona}..."):
+            # Piccola attesa di sicurezza per non sovraccaricare l'IP
+            time.sleep(1)
             df = fetch_data_multi(zona, macrosettori_scelti)
             
             if not df.empty:
-                st.success(f"Trovate {len(df)} aziende totali.")
+                st.balloons()
+                st.success(f"✅ Trovate {len(df)} aziende!")
                 
-                # Mappa interattiva
-                st.map(df.dropna(subset=['LAT', 'LON']), latitude='LAT', longitude='LON')
+                # Mappa e Tabella
+                tab1, tab2 = st.tabs(["📍 Mappa Localizzazione", "📋 Elenco Dati"])
                 
-                # Tabella dati
-                st.dataframe(df.drop(columns=['LAT', 'LON']), use_container_width=True)
+                with tab1:
+                    st.map(df.dropna(subset=['LAT', 'LON']), latitude='LAT', longitude='LON')
                 
-                # CSV Download
+                with tab2:
+                    st.dataframe(df.drop(columns=['LAT', 'LON']), use_container_width=True)
+                
+                # Download CSV
                 csv = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-                st.download_button("📥 Scarica Risultati (CSV)", csv, f"export_{zona}.csv", "text/csv")
+                st.download_button(
+                    label="📥 Scarica Database (CSV)",
+                    data=csv,
+                    file_name=f"export_{zona}.csv",
+                    mime="text/csv"
+                )
             else:
-                st.error("Nessun risultato trovato per questa combinazione.")
+                st.info("Nessun dato trovato o errore di connessione. Prova a cambiare zona o ridurre i settori.")
