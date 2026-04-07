@@ -99,55 +99,55 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         elements = r.json().get('elements', [])
         ris = []
         for e in elements:
-    t = e.get('tags', {})
-    if 'name' in t:
-        # 1. Pulizia Ragione Sociale (evita spazi bianchi extra)
-        nome = t.get('name', 'N.D.').strip()
+            t = e.get('tags', {})
+            if 'name' in t:
+                # 1. Pulizia Ragione Sociale (evita spazi bianchi extra)
+                nome = t.get('name', 'N.D.').strip()
         
-        # 2. Comune e CAP
-        comune = t.get('addr:city', 'N.D.')
-        cap = t.get('addr:postcode', 'N.D.')
+                # 2. Comune e CAP
+                comune = t.get('addr:city', 'N.D.')
+                cap = t.get('addr:postcode', 'N.D.')
         
-        # 3. Indirizzo (Gestione intelligente: se manca via, non mettere spazio vuoto)
-        via = t.get('addr:street', '')
-        civico = t.get('addr:housenumber', '')
-        indirizzo = f"{via} {civico}".strip() or "N.D."
+                # 3. Indirizzo (Gestione intelligente: se manca via, non mettere spazio vuoto)
+                via = t.get('addr:street', '')
+                civico = t.get('addr:housenumber', '')
+                indirizzo = f"{via} {civico}".strip() or "N.D."
         
-        # 4. Attività (Cascata di priorità per non restare mai a secco)
-        # Cerchiamo in ordine: Ufficio, Industria, Negozio, Artigianato, Servizio
-        attivita_raw = t.get('office') or t.get('industrial') or t.get('shop') or t.get('craft') or t.get('amenity') or 'Azienda'
-        attivita = attivita_raw.replace('_', ' ').title()
+                # 4. Attività (Cascata di priorità per non restare mai a secco)
+                # Cerchiamo in ordine: Ufficio, Industria, Negozio, Artigianato, Servizio
+                attivita_raw = t.get('office') or t.get('industrial') or t.get('shop') or t.get('craft') or t.get('amenity') or 'Azienda'
+                attivita = attivita_raw.replace('_', ' ').title()
         
-        # 5. Contatti (Aggiunta di varianti comuni)
-        sito = t.get('website') or t.get('contact:website') or 'N.D.'
-        email = t.get('email') or t.get('contact:email') or 'N.D.'
+                # 5. Contatti (Aggiunta di varianti comuni)
+                sito = t.get('website') or t.get('contact:website') or 'N.D.'
+                email = t.get('email') or t.get('contact:email') or 'N.D.'
         
-        # LinkedIn: controllo multiplo
-        linkedin = t.get('contact:linkedin') or t.get('linkedin') or t.get('contact:social:linkedin') or 'N.D.'
+                # LinkedIn: controllo multiplo
+                linkedin = t.get('contact:linkedin') or t.get('linkedin') or t.get('contact:social:linkedin') or 'N.D.'
         
-        # 6. Proprietà e Brand
-        operatore = t.get('operator', 'N.D.')
-        brand = t.get('brand', 'N.D.')
+                # 6. Proprietà e Brand
+                operatore = t.get('operator', 'N.D.')
+                brand = t.get('brand', 'N.D.')
         
-        # 7. Coordinate (Essenziale per la mappa)
-        lat_res = e.get('lat') or e.get('center', {}).get('lat')
-        lon_res = e.get('lon') or e.get('center', {}).get('lon')
+                # 7. Coordinate (Essenziale per la mappa)
+                lat_res = e.get('lat') or e.get('center', {}).get('lat')
+                lon_res = e.get('lon') or e.get('center', {}).get('lon')
         
-        if lat_res and lon_res: # Aggiungiamo solo se abbiamo la posizione
-            ris.append({
-                'Ragione Sociale': nome,
-                'Comune': comune,
-                'CAP': cap,
-                'Indirizzo': indirizzo,
-                'Attività': attivita,
-                'Sito Web': sito,
-                'Email': email,
-                'LinkedIn': linkedin,
-                'Proprietà': operatore,
-                'Brand': brand,
-                'lat': lat_res,
-                'lon': lon_res
-            })
+             if lat_res and lon_res: # Aggiungiamo solo se abbiamo la posizione
+                    ris.append({
+                        'Ragione Sociale': nome,
+                        'Comune': comune,
+                        'CAP': cap,
+                        'Indirizzo': indirizzo,
+                        'Attività': attivita,
+                        'Sito Web': sito,
+                        'Email': email,
+                        'LinkedIn': linkedin,
+                        'Proprietà': operatore,
+                        'Brand': brand,
+                        'lat': lat_res,
+                        'lon': lon_res
+                    })
         return pd.DataFrame(ris)
     except:
         return pd.DataFrame()
