@@ -63,10 +63,11 @@ if st.button("🚀 TROVA AZIENDE NELL'AREA", use_container_width=True):
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Database Aziende Trovate")
-    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon']), use_container_width=True)
+    # Escludiamo lat e lon dalla visualizzazione
+    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), use_container_width=True)
 
     st.subheader("3. Arricchimento Profondo (Web Crawler)")
-    st.info("Questo processo cercherà la P.IVA sui siti aziendali e userà quel dato per recuperare il bilancio (Fatturato/Dipendenti).")
+    st.info("Questo processo cercherà la P.IVA sui siti aziendali e recupererà il bilancio.")
     
     if st.button("🔍 ESTRAI DATI COMPLETI (P.IVA + BILANCIO)", use_container_width=True):
         df_work = st.session_state.results.copy()
@@ -78,22 +79,29 @@ if not st.session_state.results.empty:
             if row['Sito Web'] != 'N.D.':
                 status_msg.text(f"Analisi: {row['Ragione Sociale']}...")
                 
-                # Step 1: P.IVA dal sito ufficiale
+                # --- STEP 1: CHIAMATA ALLA TUA FUNZIONE (2 VALORI) ---
+                # Questa riga ora è corretta perché riceve piva ed email
                 piva, email_web = scrape_sito_aziendale(row['Sito Web'])
+                
                 df_work.at[i, 'Partita IVA'] = piva
-                if row['Email'] == 'N.D.':
+                
+                # Aggiorna l'email solo se quella di base è N.D.
+                if row.get('Email') == 'N.D.':
                     df_work.at[i, 'Email'] = email_web
                 
-                # Step 2: Fatturato e Dipendenti tramite P.IVA
-                if piva != "Non trovata" and piva != "Errore Sito":
-                    fatt, dip = scrape_camerale_data(piva)
+                # --- STEP 2: BILANCIO (SOLO SE P.IVA È VALIDA) ---
+                piva_clean = str(piva).strip()
+                if piva_clean not in ["Non trovata", "Errore Sito", "N.D."] and len(piva_clean) == 11:
+                    # Questa funzione deve restituire 2 valori: fatt e dip
+                    fatt, dip = scrape_camerale_data(piva_clean)
                     df_work.at[i, 'Fatturato'] = fatt
                     df_work.at[i, 'Dipendenti'] = dip
             
             progress_bar.progress((i + 1) / count)
         
+        # Salvataggio finale
         st.session_state.results = df_work
-        status_msg.success("✅ Arricchimento completato con successo!")
+        status_msg.success("✅ Arricchimento completato!")
         st.rerun()
 
     # Download
