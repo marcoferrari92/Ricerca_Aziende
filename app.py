@@ -107,22 +107,20 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
                 # Parametro per ricerca esterna (Ragione Sociale + Città)
                 query_societaria = f"{nome_azienda} {citta}".replace(" ", "+")
                 
-                # Puliamo il nome per la ricerca (rimuoviamo srl, spa, ecc per evitare errori)
-                nome_pulito = t.get('name').replace('S.r.l.', '').replace('SRL', '').replace('S.p.A.', '').strip()
-                query_url = f"{nome_pulito} {t.get('addr:city', '')}".replace(" ", "+")
-
                 ris.append({
-                    'Ragione Sociale': t.get('name'),
-                    'Comune': t.get('addr:city', 'N.D.'),
-                    'Attività': tipo.replace('_', ' ').title(),
-                    # LINK DIRETTI AI PORTALI DI ANALISI
-                    'Info Fatturato (UfficioCamerale)': f"https://www.ufficiocamerale.it/ricerca-imprese?q={query_url}",
-                    'Info Azienda (ReportAziende)': f"https://www.reportaziende.it/ricerca?qs={nome_pulito.replace(' ', '+')}",
-                    'Registro Imprese (Ufficiale)': f"https://www.registroimprese.it/ricerca-libera-e-acquisto?ricercaLibera={nome_pulito.replace(' ', '+')}",
-                    # -----------------------------------
+                    'Ragione Sociale': nome_azienda,
+                    'Comune': citta,
+                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D.",
+                    'Attività Specifica': t.get('industrial', t.get('shop', t.get('amenity', 'Azienda'))).replace('_', ' ').title(),
+                    'Produzione/Prodotti': t.get('produce', t.get('product', 'N.D.')),
                     'Sito Web': t.get('website', 'N.D.'),
-                    'lat': e_lat,
-                    'lon': e_lon
+                    'Telefono': t.get('phone', t.get('contact:phone', 'N.D.')),
+                    # --- NUOVI PARAMETRI DI RICERCA SOCIETARIA ---
+                    'Ricerca Fatturato (Google)': f"https://www.google.com/search?q={query_societaria}+fatturato+dipendenti",
+                    'OpenCorporates': f"https://opencorporates.com/companies?q={nome_azienda.replace(' ', '+')}&utf8=%E2%9C%93",
+                    # ---------------------------------------------
+                    'lat': e.get('lat') or e.get('center', {}).get('lat'),
+                    'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
         return pd.DataFrame(ris)
     except:
