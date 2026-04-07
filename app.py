@@ -41,35 +41,6 @@ def scrape_azienda_info(url):
     except:
         return "Errore Sito", "N.D."
 
-def scrape_camerale_data(piva):
-    """Fase 2: Cerca Fatturato e Dipendenti su portale pubblico usando la P.IVA."""
-    if not piva or piva in ["Non trovata", "Errore Sito", "N.D."] or len(piva) != 11:
-        return "N.D.", "N.D."
-    
-    # URL di ricerca basato su P.IVA
-    search_url = f"https://www.reportaziende.it/ricerca?q={piva}"
-    
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        # Piccola pausa per evitare blocchi IP
-        time.sleep(0.5)
-        response = requests.get(search_url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        testo = soup.get_text()
-
-        # Regex flessibili per catturare i dati dal testo della pagina
-        fatt_pattern = r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))'
-        dip_pattern = r'Dipendenti[:\s]*(\d+)'
-
-        fatt_match = re.search(fatt_pattern, testo, re.IGNORECASE)
-        dip_match = re.search(dip_pattern, testo, re.IGNORECASE)
-
-        fatturato = fatt_match.group(1) if fatt_match else "Vedi online"
-        dipendenti = dip_match.group(1) if dip_match else "N.D."
-
-        return fatturato, dipendenti
-    except:
-        return "N.D.", "N.D."
 
 # --- 4. GESTIONE STATO ---
 if 'pos' not in st.session_state:
@@ -135,7 +106,7 @@ if not st.session_state.results.empty:
                 status_msg.text(f"Analisi: {row['Ragione Sociale']}...")
                 
                 # Step 1: P.IVA dal sito ufficiale
-                piva, email_web = scrape_azienda_info(row['Sito Web'])
+                piva, email_web = scrape_sito_aziendale(row['Sito Web'])
                 df_work.at[i, 'Partita IVA'] = piva
                 if row['Email'] == 'N.D.':
                     df_work.at[i, 'Email'] = email_web
