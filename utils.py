@@ -95,28 +95,35 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione basata sullo screenshot di ReportAziende (Ritorna 2 valori)"""
+    """FASE 2: Estrazione basata sulla struttura dello screenshot di ReportAziende."""
     if piva in ["N.D.", "Errore", "Non trovata", "Errore Sito"] or len(str(piva)) != 11:
         return "N.D.", "N.D."
     
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        time.sleep(2) 
+        time.sleep(2) # Pausa necessaria per non essere bloccati
         res = requests.get(url, headers=headers, timeout=10, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
 
+        # Se il sito non mostra subito i dati, cerca il link della scheda azienda
         if "Dati della società" not in res.text:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
                 res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
+        # Usiamo il separatore '|' come abbiamo visto per pulire i dati dello screenshot
         testo = soup.get_text(separator='|', strip=True)
+        
+        # Estrazione Fatturato
         fatt_match = re.search(r'Fatturato[:\s]*€?\s*([\d.,]+)', testo, re.I)
-        dip_match = re.search(r'Dipendenti[:\s]*(\d+)', testo, re.I)
+        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
 
-        return (f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online", 
-                dip_match.group(1) if dip_match else "N.D.")
+        # Estrazione Dipendenti
+        dip_match = re.search(r'Dipendenti[:\s]*(\d+)', testo, re.I)
+        dipendenti = dip_match.group(1) if dip_match else "N.D."
+
+        return fatturato, dipendenti # Ritorna 2 valori
     except:
         return "Errore", "Errore"
