@@ -100,7 +100,7 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione mirata per la struttura di ReportAziende (Landi Renzo/Lovato)."""
+    """FASE 2: Estrazione basata sulla struttura precisa di ReportAziende."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
         return "N.D.", "N.D."
@@ -108,46 +108,38 @@ def scrape_camerale_data(piva):
     url = f"https://www.reportaziende.it/ricerca?q={piva_clean}"
     
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Referer': 'https://www.google.it/'
-        }
-        
-        # Pausa per evitare blocchi
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         time.sleep(2)
         res = requests.get(url, headers=headers, timeout=15, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se non siamo nella scheda finale, cerchiamo il link dell'azienda
-        if "Dati della società" not in res.text:
+        # Se siamo ancora nei risultati, entriamo nella scheda
+        if "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
                 res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
-        # --- ESTRAZIONE DATI DALLE TABELLE ---
+        # Pulizia testo: trasformiamo tutto in una stringa piatta con separatori chiari
+        testo = soup.get_text(separator='|', strip=True)
+
+        # --- ESTRAZIONE FATTURATO ---
+        # Cerchiamo "Fatturato 2023" seguito dal valore
         fatturato = "N.D."
+        fatt_match = re.search(r'Fatturato\s*2023\|€?\s*([\d.,]+)', testo, re.I)
+        if fatt_match:
+            fatturato = f"€ {fatt_match.group(1)}"
+        else:
+            # Secondo tentativo se il formato cambia leggermente
+            fatt_match_alt = re.search(r'Fatturato.*?([\d.]{7,15})', testo, re.I)
+            if fatt_match_alt: fatturato = f"€ {fatt_match_alt.group(1)}"
+
+        # --- ESTRAZIONE DIPENDENTI ---
+        # Cerchiamo "N. Dipendenti" seguito dal range o numero
         dipendenti = "N.D."
-
-        # Cerchiamo tutte le righe delle tabelle (tr)
-        for row in soup.find_all('tr'):
-            testo_riga = row.get_text(strip=True).lower()
-            
-            # Se la riga contiene "fatturato", prendiamo il valore nella cella successiva (td)
-            if 'fatturato' in testo_riga and fatturato == "N.D.":
-                cols = row.find_all('td')
-                if len(cols) > 1:
-                    fatturato = cols[1].get_text(strip=True)
-                else:
-                    # Se non è in una tabella classica, proviamo con regex sul testo della riga
-                    match = re.search(r'([\d.,]+)', row.get_text())
-                    if match: fatturato = f"€ {match.group(1)}"
-
-            # Se la riga contiene "dipendenti"
-            if 'dipendenti' in testo_riga and dipendenti == "N.D.":
-                cols = row.find_all('td')
-                if len(cols) > 1:
-                    dipendenti = cols[1].get_text(strip=True)
+        dip_match = re.search(r'Dipendenti\|(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
+        if dip_match:
+            dipendenti = dip_match.group(1)
 
         return fatturato, dipendenti
 
