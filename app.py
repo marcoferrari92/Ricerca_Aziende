@@ -4,82 +4,112 @@ import requests
 import folium
 from streamlit_folium import st_folium
 
-# --- PARTE A: IL MOTORE (Riceve le coordinate e cerca) ---
-def fetch_data_overpass(lat, lon, raggio_km, settori_ateco):
-    url = "https://overpass-api.de/api/interpreter"
-    raggio_metri = raggio_km * 1000
-    
-    # Mappatura tag (ridotta per esempio)
-    mappa_tag = {
-        "A - AGRICOLTURA": "node['landuse'='farmyard']",
-        "C - MANIFATTURIERE": "node['industrial'='factory']",
-        "I - RISTORAZIONE": "node['amenity'='restaurant']"
-    }
-    
-    # Costruiamo la query usando le coordinate passate
-    filtri = ""
-    for s in settori_ateco:
-        tag = mappa_tag.get(s)
-        if tag:
-            filtri += f"{tag}(around:{raggio_metri},{lat},{lon});\n"
+# --- 1. CONFIGURAZIONE E MAPPA TAG POTENZIATA ---
+st.set_page_config(layout="wide", page_title="ATECO Business Finder")
 
-    query = f"[out:json][timeout:90];({filtri});out tags center;"
+# Qui usiamo filtri più larghi (~ vuol dire "contiene") per non perdere nulla
+ATECO_TAGS = {
+    "A - AGRICOLTURA": ["['landuse'~'farm']", "['amenity'~'winery']", "['shop'='farm']", "['craft'='winery']"],
+    "C - MANIFATTURIERE": ["['industrial'~'factory']", "['building'='industrial']", "['craft'='sawmill']", "['man_made'='works']"],
+    "G - COMMERCIO": ["['shop'~'supermarket']", "['shop'~'wholesale']", "['shop'~'retail']"],
+    "I - RISTORAZIONE/HOTEL": ["['amenity'~'restaurant']", "['amenity'~'cafe']", "['tourism'~'hotel']"],
+    "K - INFORMATICA/UFFICI": ["['office'~'it']", "['office'~'telecommunication']", "['office'='yes']"]
+}
+
+# --- 2. IL MOTORE DI RICERCA (IL PONTE) ---
+def fetch_data_overpass(lat, lon, raggio_km, settori_ateco):
+    # Usiamo un endpoint molto stabile
+    url = "https://overpass-api.de/api/interpreter"
+    raggio_metri = int(raggio_km * 1000)
+    
+    filtri_generati = ""
+    for s in settori_ateco:
+        per_settore = ATECO_TAGS.get(s, [])
+        for t in per_settore:
+            # Cerchiamo sia nodi che aree (nwr = node, way, relation)
+            filtri_generati += f"nwr{t}(around:{raggio_metri},{lat},{lon});\n"
+
+    # Query completa con istruzione 'center' per ottenere coordinate anche dalle aree grandi
+    query = f"""
+    [out:json][timeout:120];
+    (
+      {filtri_generati}
+    );
+    out tags center;
+    """
     
     try:
-        r = requests.get(url, params={'data': query})
-        elements = r.json().get('elements', [])
-        return pd.DataFrame([{'Nome': e['tags'].get('name', 'N.D.'), 'Lat': e.get('lat') or e.get('center', {}).get('lat'), 'Lon': e.get('lon') or e.get('center', {}).get('lon')} for e in elements if 'name' in e['tags']])
-    except:
+        r = requests.get(url, params={'data': query}, timeout=130)
+        data = r.json()
+        elements = data.get('elements', [])
+        
+        risultati = []
+        for e in elements:
+            tags = e.get('tags', {})
+            if 'name' in tags:
+                # Recupero coordinate (se area usa center, se punto usa lat/lon)
+                e_lat = e.get('lat') or e.get('center', {}).get('lat')
+                e_lon = e.get('lon') or e.get('center', {}).get('lon')
+                
+                risultati.append({
+                    'Ragione Sociale': tags.get('name'),
+                    'Settore': tags.get('industrial', tags.get('shop', tags.get('amenity', 'Azienda'))),
+                    'Indirizzo': f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip() or "N.D.",
+                    'Città': tags.get('addr:city', 'N.D.'),
+                    'lat': e_lat,
+                    'lon': e_lon
+                })
+        return pd.DataFrame(risultati)
+    except Exception as e:
+        st.error(f"Errore di connessione: {e}")
         return pd.DataFrame()
 
-# --- PARTE B: L'INTERFACCIA (Raccoglie i dati) ---
-st.title("🚜 ATECO Finder Interattivo")
+# --- 3. LOGICA DELL'INTERFACCIA ---
+st.title("🏢 Business Finder ATECO Interattivo")
+st.write("Seleziona i settori, regola il raggio e **clicca sulla mappa** per posizionare il centro.")
 
-# 1. Inizializziamo il 'Post-it' se è la prima volta che apriamo l'app
-if 'punto_cliccato' not in st.session_state:
-    st.session_state.punto_cliccato = {'lat': 45.547, 'lon': 11.545} # Default Vicenza
+if 'pos' not in st.session_state:
+    st.session_state.pos = {'lat': 45.547, 'lon': 11.545} # Centro Vicenza default
 
-# Sidebar per raggio e settori
-raggio = st.sidebar.slider("Raggio (KM)", 1, 30, 5)
-settori = st.sidebar.multiselect("Settori", ["A - AGRICOLTURA", "C - MANIFATTURIERE", "I - RISTORAZIONE"], default=["A - AGRICOLTURA"])
+# Sidebar
+with st.sidebar:
+    st.header("Filtri")
+    km = st.slider("Raggio (KM)", 1, 20, 5)
+    scelte = st.multiselect("Macrosettori", list(ATECO_TAGS.keys()), default=["A - AGRICOLTURA"])
+    st.info("💡 Il cerchio sulla mappa mostra l'area che verrà scansionata.")
 
-# 2. Mostriamo la mappa e catturiamo il click
-m = folium.Map(location=[st.session_state.punto_cliccato['lat'], st.session_state.punto_cliccato['lon']], zoom_start=12)
+# Mappa Interattiva
+m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
 
-# Disegniamo il raggio visivo basandoci sul 'Post-it'
+# Disegna cerchio di anteprima
 folium.Circle(
-    location=[st.session_state.punto_cliccato['lat'], st.session_state.punto_cliccato['lon']],
-    radius=raggio * 1000,
-    color="red", fill=True, opacity=0.2
+    location=[st.session_state.pos['lat'], st.session_state.pos['lon']],
+    radius=km * 1000,
+    color="#3186cc", fill=True, fill_opacity=0.2
 ).add_to(m)
+folium.Marker([st.session_state.pos['lat'], st.session_state.pos['lon']]).add_to(m)
 
-st.write("### 1. Clicca sulla mappa per spostare il centro")
-mappa_interattiva = st_folium(m, width=700, height=400)
+out = st_folium(m, width=800, height=450)
 
-# 3. COMUNICAZIONE: Se l'utente clicca, aggiorniamo il 'Post-it'
-if mappa_interattiva and mappa_interattiva['last_clicked']:
-    nuova_lat = mappa_interattiva['last_clicked']['lat']
-    nuova_lon = mappa_interattiva['last_clicked']['lng']
-    
-    # Se il click è diverso da quello salvato, aggiorna e ricarica
-    if nuova_lat != st.session_state.punto_cliccato['lat']:
-        st.session_state.punto_cliccato = {'lat': nuova_lat, 'lon': nuova_lon}
+# Comunicazione: se clicchi, aggiorna la posizione salvata
+if out and out['last_clicked']:
+    nl, nn = out['last_clicked']['lat'], out['last_clicked']['lng']
+    if nl != st.session_state.pos['lat']:
+        st.session_state.pos = {'lat': nl, 'lon': nn}
         st.rerun()
 
-# 4. IL PONTE: Il tasto prende i dati dal 'Post-it' e li manda alla Funzione
-st.write(f"📍 Centro attuale: {st.session_state.punto_cliccato['lat']:.4f}, {st.session_state.punto_cliccato['lon']:.4f}")
-
-if st.button("🚀 AVVIA RICERCA AZIENDE"):
-    # Qui avviene la magia: passiamo i dati dal session_state alla funzione di ricerca
-    risultati = fetch_data_overpass(
-        st.session_state.punto_cliccato['lat'], 
-        st.session_state.punto_cliccato['lon'], 
-        raggio, 
-        settori
-    )
-    
-    if not risultati.empty:
-        st.success(f"Trovate {len(risultati)} aziende!")
-        st.dataframe(risultati)
-    else:
-        st.warning("Nessun risultato. Prova a spostare il punto o aumentare il raggio.")
+# IL TASTO DI COMANDO
+st.write(f"📍 Centro: **{st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}**")
+if st.button("🚀 SCANSIONA AREA", use_container_width=True):
+    with st.spinner("Interrogazione database..."):
+        df = fetch_data_overpass(st.session_state.pos['lat'], st.session_state.pos['lon'], km, scelte)
+        
+        if not df.empty:
+            st.success(f"Trovate {len(df)} attività!")
+            st.dataframe(df.drop(columns=['lat', 'lon']), use_container_width=True)
+            
+            # Bottone Download
+            csv = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
+            st.download_button("📥 Scarica CSV", csv, "export_aziende.csv", "text/csv")
+        else:
+            st.warning("Nessun risultato. Prova a cliccare in una zona diversa o aumentare il raggio.")
