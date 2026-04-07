@@ -97,24 +97,42 @@ def scrape_sito_aziendale(url):
     except: return "Errore", "N.D.", "N.D."
 
 def scrape_portale_camerale(piva):
-    """FASE 2: Cerca dati ufficiali di bilancio tramite P.IVA."""
+    """FASE 2: Cerca dati ufficiali di bilancio (Versione Potenziata)."""
     if piva in ["N.D.", "Errore", "Non trovata"] or len(piva) != 11:
         return "N.D.", "N.D."
     
+    # Proviamo ReportAziende che è solitamente più leggibile
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        time.sleep(1) # Rispetto per i server
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'it-IT,it;q=0.9'
+        }
+        time.sleep(1.5) # Aumentato il delay per sicurezza
         res = requests.get(url, headers=headers, timeout=10)
+        
+        # Usiamo BeautifulSoup per isolare il testo "pulito"
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text()
-        
-        fatt_c = re.search(r'Fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
-        dip = re.search(r'Dipendenti[:\s]*(\d+)', testo, re.I)
-        
-        return (fatt_c.group(1) if fatt_c else "Vedi online", 
-                dip.group(1) if dip else "N.D.")
-    except: return "Errore", "Errore"
+        testo = soup.get_text(separator=' ').strip()
+
+        # Regex migliorata: cerca la parola fatturato e cattura i numeri/simboli successivi
+        # Gestisce: "Fatturato € 1.234.567", "Fatturato 2024: 10mln", ecc.
+        fatt_pattern = r'fatturato\s*(?:\d{4})?[:\s-]*([€\d.,\s]+(?:milioni|mila|mln|k|euro|€)?)'
+        dip_pattern = r'dipendenti[:\s-]*(\d+)'
+
+        fatt_match = re.search(fatt_pattern, testo, re.IGNORECASE)
+        dip_match = re.search(dip_pattern, testo, re.IGNORECASE)
+
+        # Pulizia del risultato per togliere spazi inutili
+        fatturato = fatt_match.group(1).strip() if fatt_match else "Controlla link"
+        dipendenti = dip_match.group(1).strip() if dip_match else "N.D."
+
+        # Se il fatturato estratto è troppo corto (es. solo un simbolo), resettiamo
+        if len(fatturato) < 2: fatturato = "Vedi online"
+
+        return fatturato, dipendenti
+    except Exception as e:
+        return f"Errore: {str(e)[:10]}", "Errore"
 
 # --- 3. INTERFACCIA ---
 
