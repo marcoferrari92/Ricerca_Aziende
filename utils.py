@@ -100,31 +100,24 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
+    """FASE 2: Versione Debug - Cattura tutto il testo della pagina."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
-    # Usiamo un URL di Google Cache o un servizio di ricerca per bypassare il blocco diretto
-    url = f"https://www.google.it/search?q=reportaziende+{piva_clean}"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept-Language': 'it-IT,it;q=0.9'
-    }
+    url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
     try:
-        # Proviamo a passare per la ricerca (meno controllata)
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(url, headers=headers, timeout=15, verify=False)
         
-        # Se Google ci blocca o non trova nulla, l'unica è l'Opzione 2
-        if "Fatturato" not in res.text:
-            # Riprova il sito diretto ma con una sessione pulita
-            res = requests.Session().get(f"https://www.reportaziende.it/ricerca?q={piva_clean}", headers=headers, timeout=10)
+        # Se c'è un redirect o un link aziendale, proviamo a seguirlo una volta
+        soup = BeautifulSoup(res.text, 'html.parser')
+        link = soup.find('a', href=re.compile(r'/azienda/'))
+        if link and "/azienda/" not in res.url:
+            res = requests.get("https://www.fatturatoitalia.it" + link['href'], headers=headers)
         
-        testo = " ".join(BeautifulSoup(res.text, 'html.parser').get_text(separator='|').split())
-        
-        # Estrazione flessibile
-        fatt_match = re.search(r'Fatturato.*?([\d.]{7,15})', testo, re.I)
-        dip_match = re.search(r'Dipendenti.*?(\d+)', testo, re.I)
+        # RESTITUIAMO TUTTO IL TESTO PULITO COME 'FATTURATO'
+        # In questo modo lo vedrai nella colonna Fatturato della tabella
+        testo_completo = " ".join(res.text.split()) 
+        return testo_completo[:5000], "DEBUG_MODE" # Prendiamo i primi 5000 caratteri
 
-        return (f"€ {fatt_match.group(1)}" if fatt_match else "N.D.", 
-                dip_match.group(1) if dip_match else "N.D.")
-    except:
-        return "Sito Protetto", "N.D."
+    except Exception as e:
+        return f"ERRORE CONNESSIONE: {str(e)}", "N.D."
