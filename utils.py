@@ -69,24 +69,24 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
 
 
 def scrape_sito_aziendale(url):
-    """Fase 1: Estrae P.IVA ed Email dal sito ufficiale dell'azienda."""
-    if not url or url == 'N.D.':
-        return "N.D.", "N.D."
-    if not url.startswith('http'):
-        url = 'http://' + url
+    """Fase 1: Estrae P.IVA ed Email pulendo i caratteri sporchi."""
+    if not url or url == 'N.D.': return "N.D.", "N.D."
+    if not url.startswith('http'): url = 'http://' + url
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=8)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        testo = soup.get_text()
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        # verify=False ignora errori di certificato SSL (molto comune in Italia)
+        res = requests.get(url, headers=headers, timeout=8, verify=False)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # separator=' ' evita che le parole si attacchino
+        testo = soup.get_text(separator=' ', strip=True)
 
-        # Regex per Partita IVA (11 cifre)
-        piva_match = re.search(r'\b\d{11}\b', testo)
-        piva = piva_match.group(0) if piva_match else "Non trovata"
+        # Cerchiamo la P.IVA: 11 cifre, ma puliamo eventuali prefissi "IT"
+        piva_match = re.search(r'\b(?:IT)?(\d{11})\b', testo, re.I)
+        piva = piva_match.group(1) if piva_match else "Non trovata"
 
-        # Regex per Email
         email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "Non trovata"
+        email = email_match.group(0) if email_match else "N.D."
 
         return piva, email
     except:
