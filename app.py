@@ -101,24 +101,21 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         for e in elements:
             t = e.get('tags', {})
             if 'name' in t:
-                nome_azienda = t.get('name')
-                citta = t.get('addr:city', 'N.D.')
-                
-                # Parametro per ricerca esterna (Ragione Sociale + Città)
-                query_societaria = f"{nome_azienda} {citta}".replace(" ", "+")
+                # Estrazione e formattazione parametri richiesti
+                nome = t.get('name')
+                comune_cap = f"{t.get('addr:city', 'N.D.')} ({t.get('addr:postcode', 'N.D.')})"
+                indirizzo = f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D."
+                attivita = t.get('industrial', t.get('shop', t.get('amenity', t.get('craft', 'Azienda')))).replace('_', ' ').title()
+                sito = t.get('website', 'N.D.')
+                email = t.get('email', 'N.D.')
                 
                 ris.append({
-                    'Ragione Sociale': nome_azienda,
-                    'Comune': citta,
-                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or "N.D.",
-                    'Attività Specifica': t.get('industrial', t.get('shop', t.get('amenity', 'Azienda'))).replace('_', ' ').title(),
-                    'Produzione/Prodotti': t.get('produce', t.get('product', 'N.D.')),
-                    'Sito Web': t.get('website', 'N.D.'),
-                    'Telefono': t.get('phone', t.get('contact:phone', 'N.D.')),
-                    # --- NUOVI PARAMETRI DI RICERCA SOCIETARIA ---
-                    'Ricerca Fatturato (Google)': f"https://www.google.com/search?q={query_societaria}+fatturato+dipendenti",
-                    'OpenCorporates': f"https://opencorporates.com/companies?q={nome_azienda.replace(' ', '+')}&utf8=%E2%9C%93",
-                    # ---------------------------------------------
+                    'Ragione Sociale': nome,
+                    'Comune (CAP)': comune_cap,
+                    'Indirizzo': indirizzo,
+                    'Attività': attivita,
+                    'Sito Web': sito,
+                    'Email': email,
                     'lat': e.get('lat') or e.get('center', {}).get('lat'),
                     'lon': e.get('lon') or e.get('center', {}).get('lon')
                 })
