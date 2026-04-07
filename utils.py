@@ -96,40 +96,48 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione dati con Regex ultra-flessibile."""
+    """FASE 2: Ricerca profonda dei dati economici."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
     if len(piva_clean) != 11:
-        return "P.IVA non valida", "N.D."
+        return "N.D.", "N.D."
     
     url = f"https://www.fatturatoitalia.it/ricerca?q={piva_clean}"
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept-Language': 'it-IT,it;q=0.9'
+        }
         time.sleep(3)
         res = requests.get(url, headers=headers, timeout=15, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
 
+        # Se non siamo sulla scheda, cerchiamo il primo link aziendale
         if "/azienda/" not in res.url:
             link = soup.find('a', href=re.compile(r'/azienda/'))
             if link:
-                res = requests.get("https://www.fatturatoitalia.it" + link['href'], headers=headers, verify=False)
+                full_link = "https://www.fatturatoitalia.it" + link['href'] if not link['href'].startswith('http') else link['href']
+                time.sleep(2)
+                res = requests.get(full_link, headers=headers, timeout=15, verify=False)
                 soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Trasformiamo tutto il testo in una stringa unica con spazi singoli
-        testo = " ".join(soup.get_text().split())
+        # Pulizia testo: rendiamo tutto una stringa piatta e senza spazi doppi
+        testo = " ".join(soup.get_text(separator=' ').split())
 
-        # 1. CERCA FATTURATO (Più flessibile: ignora anni e simboli in mezzo)
-        # Cerca 'Fatturato', ignora tutto fino al primo simbolo € o numero con punti
-        fatt_match = re.search(r'Fatturato.*?€?\s*([\d.,]+)', testo, re.I)
+        # --- RICERCA FATTURATO ---
+        # Cerca 'Fatturato', salta fino a 50 caratteri qualsiasi, e prendi il primo numero formato da cifre e punti
+        fatt_search = re.search(r'Fatturato.{0,50}?(?:€|EUR)?\s*([\d.]{5,15})', testo, re.I)
         
-        # 2. CERCA DIPENDENTI (Cerca 'Dipendenti' e prende tutto il range o il numero)
-        # Gestisce: "Dipendenti 250", "da 250 a 499", "N. Dipendenti: 300"
-        dip_match = re.search(r'Dipendenti\s*(?:da\s*)?(\d+(?:\s*a\s*\d+)?|\d+)', testo, re.I)
+        # --- RICERCA DIPENDENTI ---
+        # Cerca 'Dipendenti', salta fino a 30 caratteri, e prendi:
+        # 1. Il range "da X a Y"
+        # 2. Oppure un numero secco
+        dip_search = re.search(r'Dipendenti.{0,30}?(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
 
-        f_val = f"€ {fatt_match.group(1)}" if fatt_match else "Vedi online"
-        d_val = dip_match.group(1).strip() if dip_match else "N.D."
+        fatturato = f"€ {fatt_search.group(1)}" if fatt_search else "Vedi online"
+        dipendenti = dip_search.group(1).strip() if dip_search else "N.D."
 
-        return f_val, d_val
+        return fatturato, dipendenti
 
     except Exception:
-        return "Non Trovato", "N.D."
+        return "Errore connessione", "N.D."
