@@ -10,45 +10,18 @@ import time
 
 # Import delle componenti esterne
 from mapping import ATECO_MAP 
-from utils import fetch_data, scrape_sito_aziendale
+from utils import fetch_data, scrape_sito_aziendale, scrape_camerale_data
 
-# --- 1. CONFIGURAZIONE PAGINA ---
+# --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor")
 
-# --- 2. FUNZIONI DI SCRAPING E UTILITY ---
-
-def scrape_azienda_info(url):
-    """Fase 1: Estrae P.IVA ed Email dal sito ufficiale dell'azienda."""
-    if not url or url == 'N.D.':
-        return "N.D.", "N.D."
-    if not url.startswith('http'):
-        url = 'http://' + url
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=8)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        testo = soup.get_text()
-
-        # Regex per Partita IVA (11 cifre)
-        piva_match = re.search(r'\b\d{11}\b', testo)
-        piva = piva_match.group(0) if piva_match else "Non trovata"
-
-        # Regex per Email
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "Non trovata"
-
-        return piva, email
-    except:
-        return "Errore Sito", "N.D."
-
-
-# --- 4. GESTIONE STATO ---
+# --- GESTIONE STATO ---
 if 'pos' not in st.session_state:
     st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
-# --- 5. INTERFACCIA UTENTE ---
+# --- INTERFACCIA UTENTE ---
 st.title("🏭 Business Data Extractor")
 st.markdown("Trova aziende sulla mappa e arricchisci i dati con **P.IVA**, **Email**, **Fatturato** e **Dipendenti**.")
 
@@ -86,7 +59,7 @@ if st.button("🚀 TROVA AZIENDE NELL'AREA", use_container_width=True):
             st.session_state.results = df
             st.rerun()
 
-# --- 6. RISULTATI E SCRAPING AVANZATO ---
+# --- RISULTATI E SCRAPING AVANZATO ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Database Aziende Trovate")
