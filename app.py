@@ -4,112 +4,125 @@ import requests
 import folium
 from streamlit_folium import st_folium
 
-# --- 1. CONFIGURAZIONE E MAPPA TAG POTENZIATA ---
-st.set_page_config(layout="wide", page_title="ATECO Business Finder")
-
-# Qui usiamo filtri più larghi (~ vuol dire "contiene") per non perdere nulla
-ATECO_TAGS = {
-    "A - AGRICOLTURA": ["['landuse'~'farm']", "['amenity'~'winery']", "['shop'='farm']", "['craft'='winery']"],
-    "C - MANIFATTURIERE": ["['industrial'~'factory']", "['building'='industrial']", "['craft'='sawmill']", "['man_made'='works']"],
-    "G - COMMERCIO": ["['shop'~'supermarket']", "['shop'~'wholesale']", "['shop'~'retail']"],
-    "I - RISTORAZIONE/HOTEL": ["['amenity'~'restaurant']", "['amenity'~'cafe']", "['tourism'~'hotel']"],
-    "K - INFORMATICA/UFFICI": ["['office'~'it']", "['office'~'telecommunication']", "['office'='yes']"]
+# --- 1. MAPPATURA INTEGRALE E PRECISA ---
+# Ho unito i tuoi tag agricoli con i tag tecnici degli altri settori
+ATECO_MAP = {
+    "A - AGRICOLTURA, SILVICOLTURA E PESCA": ["['landuse'='farmyard']", "['industrial'='agriculture']", "['shop'='farm']", "['craft'='winery']", "['landuse'='vineyard']", "['forestry'='yes']"],
+    "B - ATTIVITA' ESTRATTIVE": ["['landuse'='quarry']", "['industrial'='mine']", "['industrial'='stone_cutter']"],
+    "C - ATTIVITA' MANIFATTURIERE": ["['industrial'='factory']", "['building'='industrial']", "['craft'='sawmill']", "['man_made'='works']", "['industrial'='tannery']"],
+    "D - ENERGIA E GAS": ["['power'='plant']", "['substation'='yes']"],
+    "E - ACQUA E RIFIUTI": ["['amenity'='waste_disposal']", "['man_made'='water_works']"],
+    "F - COSTRUZIONI": ["['office'='builder']", "['craft'='carpenter']", "['industrial'='construction']"],
+    "G - COMMERCIO ALL'INGROSSO E DETTAGLIO": ["['shop'='supermarket']", "['shop'='wholesale']", "['shop'='retail']", "['shop'='department_store']"],
+    "H - TRASPORTO E MAGAZZINAGGIO": ["['amenity'='bus_station']", "['industrial'='logistics']", "['building'='warehouse']"],
+    "I - ALLOGGIO E RISTORAZIONE": ["['amenity'='restaurant']", "['amenity'='cafe']", "['tourism'='hotel']", "['tourism'='guest_house']", "['amenity'='pub']"],
+    "K - INFORMATICA E TELECOMUNICAZIONI": ["['office'='it']", "['office'='telecommunication']", "['telecom'='data_center']"],
+    "L - FINANZA E ASSICURAZIONI": ["['amenity'='bank']", "['office'='insurance']"],
+    "M - IMMOBILIARI": ["['office'='estate_agent']"],
+    "N - PROFESSIONALI E SCIENTIFICHE": ["['office'='lawyer']", "['office'='architect']", "['office'='accountant']", "['office'='research']"],
+    "Q - ISTRUZIONE": ["['amenity'='school']", "['amenity'='university']"],
+    "R - SALUTE": ["['amenity'='hospital']", "['amenity'='doctors']", "['amenity'='pharmacy']"],
+    "S - SPORT E DIVERTIMENTO": ["['leisure'='sports_centre']", "['amenity'='cinema']", "['amenity'='theatre']"]
 }
 
-# --- 2. IL MOTORE DI RICERCA (IL PONTE) ---
-def fetch_data_overpass(lat, lon, raggio_km, settori_ateco):
-    # Usiamo un endpoint molto stabile
+# --- 2. MOTORE DI RICERCA ---
+def fetch_data_overpass(lat, lon, raggio_km, macrosettori_scelti):
     url = "https://overpass-api.de/api/interpreter"
-    raggio_metri = int(raggio_km * 1000)
+    raggio_m = int(raggio_km * 1000)
     
-    filtri_generati = ""
-    for s in settori_ateco:
-        per_settore = ATECO_TAGS.get(s, [])
-        for t in per_settore:
-            # Cerchiamo sia nodi che aree (nwr = node, way, relation)
-            filtri_generati += f"nwr{t}(around:{raggio_metri},{lat},{lon});\n"
+    filtri_query = ""
+    for ms in macrosettori_scelti:
+        tag_list = ATECO_MAP.get(ms, [])
+        for t in tag_list:
+            filtri_query += f"nwr{t}(around:{raggio_m},{lat},{lon});\n"
 
-    # Query completa con istruzione 'center' per ottenere coordinate anche dalle aree grandi
     query = f"""
     [out:json][timeout:120];
     (
-      {filtri_generati}
+      {filtri_query}
     );
     out tags center;
     """
     
     try:
         r = requests.get(url, params={'data': query}, timeout=130)
-        data = r.json()
-        elements = data.get('elements', [])
-        
+        elements = r.json().get('elements', [])
         risultati = []
         for e in elements:
-            tags = e.get('tags', {})
-            if 'name' in tags:
-                # Recupero coordinate (se area usa center, se punto usa lat/lon)
+            t = e.get('tags', {})
+            if 'name' in t:
+                # Estrazione coordinate (punto o centro area)
                 e_lat = e.get('lat') or e.get('center', {}).get('lat')
                 e_lon = e.get('lon') or e.get('center', {}).get('lon')
                 
                 risultati.append({
-                    'Ragione Sociale': tags.get('name'),
-                    'Settore': tags.get('industrial', tags.get('shop', tags.get('amenity', 'Azienda'))),
-                    'Indirizzo': f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip() or "N.D.",
-                    'Città': tags.get('addr:city', 'N.D.'),
+                    'Ragione Sociale': t.get('name'),
+                    'Comune': t.get('addr:city', 'N.D.'),
+                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or 'N.D.',
+                    'Tipologia': t.get('description', t.get('farmyard:type', t.get('industrial', 'Azienda'))),
+                    'Sito Web': t.get('website', 'N.D.'),
+                    'Telefono': t.get('phone', 'N.D.'),
+                    'Produzione': t.get('produce', 'N.D.'),
                     'lat': e_lat,
                     'lon': e_lon
                 })
         return pd.DataFrame(risultati)
-    except Exception as e:
-        st.error(f"Errore di connessione: {e}")
+    except:
         return pd.DataFrame()
 
-# --- 3. LOGICA DELL'INTERFACCIA ---
-st.title("🏢 Business Finder ATECO Interattivo")
-st.write("Seleziona i settori, regola il raggio e **clicca sulla mappa** per posizionare il centro.")
+# --- 3. INTERFACCIA STREAMLIT ---
+st.set_page_config(layout="wide", page_title="Business Finder ATECO")
+st.title("🏢 Business Finder ATECO con Mappa")
 
 if 'pos' not in st.session_state:
-    st.session_state.pos = {'lat': 45.547, 'lon': 11.545} # Centro Vicenza default
+    st.session_state.pos = {'lat': 45.547, 'lon': 11.545} # Default Vicenza
 
-# Sidebar
 with st.sidebar:
-    st.header("Filtri")
-    km = st.slider("Raggio (KM)", 1, 20, 5)
-    scelte = st.multiselect("Macrosettori", list(ATECO_TAGS.keys()), default=["A - AGRICOLTURA"])
-    st.info("💡 Il cerchio sulla mappa mostra l'area che verrà scansionata.")
+    st.header("⚙️ Configura Ricerca")
+    raggio = st.slider("Raggio di ricerca (KM)", 1, 30, 10)
+    scelte = st.multiselect("Seleziona Macrosettori ATECO", list(ATECO_MAP.keys()), default=["A - AGRICOLTURA, SILVICOLTURA E PESCA"])
+    st.write("---")
+    st.info("📌 Clicca sulla mappa per impostare il centro della scansione.")
 
-# Mappa Interattiva
-m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
+# --- 4. MAPPA PER SELEZIONE PUNTO ---
+m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=11)
+folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="blue", fill=True, opacity=0.2).add_to(m)
+folium.Marker([st.session_state.pos['lat'], st.session_state.pos['lon']], tooltip="Punto di scansione").add_to(m)
 
-# Disegna cerchio di anteprima
-folium.Circle(
-    location=[st.session_state.pos['lat'], st.session_state.pos['lon']],
-    radius=km * 1000,
-    color="#3186cc", fill=True, fill_opacity=0.2
-).add_to(m)
-folium.Marker([st.session_state.pos['lat'], st.session_state.pos['lon']]).add_to(m)
+map_input = st_folium(m, width="100%", height=400)
 
-out = st_folium(m, width=800, height=450)
-
-# Comunicazione: se clicchi, aggiorna la posizione salvata
-if out and out['last_clicked']:
-    nl, nn = out['last_clicked']['lat'], out['last_clicked']['lng']
+# Aggiornamento posizione al click
+if map_input and map_input['last_clicked']:
+    nl, nn = map_input['last_clicked']['lat'], map_input['last_clicked']['lng']
     if nl != st.session_state.pos['lat']:
         st.session_state.pos = {'lat': nl, 'lon': nn}
         st.rerun()
 
-# IL TASTO DI COMANDO
-st.write(f"📍 Centro: **{st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}**")
-if st.button("🚀 SCANSIONA AREA", use_container_width=True):
-    with st.spinner("Interrogazione database..."):
-        df = fetch_data_overpass(st.session_state.pos['lat'], st.session_state.pos['lon'], km, scelte)
+# --- 5. AZIONE E RISULTATI ---
+if st.button(f"🚀 SCANSIONA AREA ENTRO {raggio} KM", use_container_width=True):
+    with st.spinner("Estrazione dati in corso..."):
+        df = fetch_data_overpass(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
         
         if not df.empty:
-            st.success(f"Trovate {len(df)} attività!")
+            st.success(f"Trovate {len(df)} aziende!")
+            
+            # MAPPA DEI RISULTATI
+            st.subheader("📍 Localizzazione sulla Mappa")
+            res_map = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
+            for _, row in df.iterrows():
+                folium.Marker(
+                    [row['lat'], row['lon']], 
+                    popup=f"<b>{row['Ragione Sociale']}</b><br>{row['Produzione']}",
+                    icon=folium.Icon(color='red', icon='briefcase')
+                ).add_to(res_map)
+            st_folium(res_map, width="100%", height=450, key="results")
+
+            # TABELLA DETTAGLIATA
+            st.subheader("📋 Database Aziendale")
             st.dataframe(df.drop(columns=['lat', 'lon']), use_container_width=True)
             
-            # Bottone Download
+            # DOWNLOAD
             csv = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-            st.download_button("📥 Scarica CSV", csv, "export_aziende.csv", "text/csv")
+            st.download_button("📥 Scarica Database (CSV)", csv, "database_export.csv", "text/csv")
         else:
-            st.warning("Nessun risultato. Prova a cliccare in una zona diversa o aumentare il raggio.")
+            st.warning("Nessun dato trovato. Prova a cambiare zona o aumentare il raggio.")
