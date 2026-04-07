@@ -100,51 +100,36 @@ def scrape_sito_aziendale(url):
 
 
 def scrape_camerale_data(piva):
-    """FASE 2: Estrazione basata sulla struttura precisa di ReportAziende."""
     piva_clean = "".join(filter(str.isdigit, str(piva)))
-    if len(piva_clean) != 11:
-        return "N.D.", "N.D."
-    
     url = f"https://www.reportaziende.it/ricerca?q={piva_clean}"
-    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+    print(f"\n--- DEBUG: Provo a collegarmi a {url} ---")
+
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        time.sleep(2)
         res = requests.get(url, headers=headers, timeout=15, verify=False)
+        
+        # 1. STAMPA IL CODICE DI RISPOSTA (200=OK, 403=BLOCCATO)
+        print(f"STATUS CODE: {res.status_code}")
+
+        # 2. STAMPA COSA VEDE IL BOT (I primi 1000 caratteri)
+        print("CONTENUTO HTML (PRIMI 1000 CARATTERI):")
+        print(res.text[:1000])
+        print("--- FINE DEBUG ---\n")
+
         soup = BeautifulSoup(res.text, 'html.parser')
-
-        # Se siamo ancora nei risultati, entriamo nella scheda
-        if "/azienda/" not in res.url:
-            link = soup.find('a', href=re.compile(r'/azienda/'))
-            if link:
-                res = requests.get("https://www.reportaziende.it" + link['href'], headers=headers, verify=False)
-                soup = BeautifulSoup(res.text, 'html.parser')
-
-        # Pulizia testo: trasformiamo tutto in una stringa piatta con separatori chiari
+        
+        # Logica di estrazione (quella che avevi già)
         testo = soup.get_text(separator='|', strip=True)
-
-        # --- ESTRAZIONE FATTURATO ---
-        # Cerchiamo "Fatturato 2023" seguito dal valore
-        fatturato = "N.D."
-        fatt_match = re.search(r'Fatturato\s*2023\|€?\s*([\d.,]+)', testo, re.I)
-        if fatt_match:
-            fatturato = f"€ {fatt_match.group(1)}"
-        else:
-            # Secondo tentativo se il formato cambia leggermente
-            fatt_match_alt = re.search(r'Fatturato.*?([\d.]{7,15})', testo, re.I)
-            if fatt_match_alt: fatturato = f"€ {fatt_match_alt.group(1)}"
-
-        # --- ESTRAZIONE DIPENDENTI ---
-        # Cerchiamo "N. Dipendenti" seguito dal range o numero
-        dipendenti = "N.D."
+        fatt_match = re.search(r'Fatturato.*?([\d.]{7,15})', testo, re.I)
+        fatturato = f"€ {fatt_match.group(1)}" if fatt_match else "N.D."
+        
         dip_match = re.search(r'Dipendenti\|(da\s*\d+\s*a\s*\d+|\d+)', testo, re.I)
-        if dip_match:
-            dipendenti = dip_match.group(1)
-
-        res = requests.get(url, headers=headers)
-        print(res.text[:500]) # <--- AGGIUNGI QUESTO PER IL DEBUG
+        dipendenti = dip_match.group(1) if dip_match else "N.D."
 
         return fatturato, dipendenti
 
-    except Exception:
+    except Exception as e:
+        # Se c'è un errore, stampiamolo!
+        print(f"ERRORE CRITICO: {str(e)}")
         return "Errore Lettura", "N.D."
