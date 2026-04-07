@@ -97,55 +97,58 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
     try:
         r = requests.get(url, params={'data': query}, timeout=100)
         elements = r.json().get('elements', [])
-        ris = []
-        # Inizia il ciclo sugli elementi ricevuti da Overpass
+        # Assicurati che ris = [] sia definito PRIMA del ciclo for
+        ris = [] 
+        
         for e in elements:
             t = e.get('tags', {})
+            
+            # Filtro: procediamo solo se l'elemento ha un nome
             if 'name' in t:
-                # 1. Pulizia Ragione Sociale
-                nome = t.get('name', 'N.D.').strip()
-        
-                # 2. Comune e CAP
-                comune = t.get('addr:city', 'N.D.')
-                cap = t.get('addr:postcode', 'N.D.')
-        
-                # 3. Indirizzo
-                via = t.get('addr:street', '')
-                civico = t.get('addr:housenumber', '')
-                indirizzo = f"{via} {civico}".strip() or "N.D."
-        
-                # 4. Attività (Cascata di priorità)
-                attivita_raw = t.get('office') or t.get('industrial') or t.get('shop') or t.get('craft') or t.get('amenity') or 'Azienda'
-                attivita = attivita_raw.replace('_', ' ').title()
-        
-                # 5. Contatti
-                sito = t.get('website') or t.get('contact:website') or 'N.D.'
-                email = t.get('email') or t.get('contact:email') or 'N.D.'
-        
-                # LinkedIn: controllo multiplo
-                linkedin = t.get('contact:linkedin') or t.get('linkedin') or t.get('contact:social:linkedin') or 'N.D.'
-        
-                # 6. Proprietà e Brand
-                operatore = t.get('operator', 'N.D.')
-                brand = t.get('brand', 'N.D.')
-        
-                # 7. Coordinate
-                lat_res = e.get('lat') or e.get('center', {}).get('lat')
-                lon_res = e.get('lon') or e.get('center', {}).get('lon')
-        
-                # --- CORREZIONE QUI: Indentazione allineata al blocco 'if name in t' ---
-                if lat_res and lon_res: 
+                # 1. Estrazione Coordinate (Fondamentale)
+                # Overpass restituisce 'lat' per i nodi e 'center' per vie/aree
+                lat_res = e.get('lat')
+                lon_res = e.get('lon')
+                
+                if lat_res is None and 'center' in e:
+                    lat_res = e['center'].get('lat')
+                    lon_res = e['center'].get('lon')
+
+                # 2. Se abbiamo le coordinate, estraiamo i dati
+                if lat_res and lon_res:
+                    # Pulizia stringhe e valori di default
+                    nome = t.get('name', 'N.D.').strip()
+                    comune = t.get('addr:city', 'N.D.')
+                    cap = t.get('addr:postcode', 'N.D.')
+                    
+                    # Formattazione Indirizzo
+                    via = t.get('addr:street', '')
+                    civico = t.get('addr:housenumber', '')
+                    indirizzo_completo = f"{via} {civico}".strip() or "N.D."
+                    
+                    # Identificazione Attività (Cascata di tag)
+                    attivita_raw = (t.get('office') or t.get('industrial') or 
+                                   t.get('shop') or t.get('craft') or 
+                                   t.get('amenity') or 'Azienda')
+                    attivita_pulita = attivita_raw.replace('_', ' ').title()
+                    
+                    # Contatti e Social
+                    sito = t.get('website') or t.get('contact:website') or 'N.D.'
+                    email = t.get('email') or t.get('contact:email') or 'N.D.'
+                    linkedin = t.get('contact:linkedin') or t.get('linkedin') or 'N.D.'
+                    
+                    # 3. Riempimento della lista
                     ris.append({
                         'Ragione Sociale': nome,
                         'Comune': comune,
                         'CAP': cap,
-                        'Indirizzo': indirizzo,
-                        'Attività': attivita,
+                        'Indirizzo': indirizzo_completo,
+                        'Attività': attivita_pulita,
                         'Sito Web': sito,
                         'Email': email,
                         'LinkedIn': linkedin,
-                        'Proprietà': operatore,
-                        'Brand': brand,
+                        'Proprietà': t.get('operator', 'N.D.'),
+                        'Brand': t.get('brand', 'N.D.'),
                         'lat': lat_res,
                         'lon': lon_res
                     })
