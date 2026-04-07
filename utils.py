@@ -1,6 +1,8 @@
 
 import requests
+import re
 import pandas as pd
+from bs4 import BeautifulSoup
 from mapping import ATECO_MAP
 
 def fetch_data(lat, lon, raggio_km, macrosettori):
