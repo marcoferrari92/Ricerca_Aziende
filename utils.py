@@ -141,6 +141,9 @@ def scrape_camerale_data(piva):
         if dip_match:
             dipendenti = dip_match.group(1)
 
+        res = requests.get(url, headers=headers)
+        print(res.text[:500]) # <--- AGGIUNGI QUESTO PER IL DEBUG
+
         return fatturato, dipendenti
 
     except Exception:
