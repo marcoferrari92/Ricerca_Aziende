@@ -180,40 +180,37 @@ def pulisci_nome_universale(nome):
     return nome_pulito
 
 # --- 3. MOTORE ANALISI IA MULTI-FONTE (ANSA + LOCALI) ---
-from duckduckgo_search import DDGS 
-
 def analizza_sicurezza_ia_multi(nome_azienda):
-
+    # 1. Puliamo il nome in modo universale
     nome_query = pulisci_nome_universale(nome_azienda)
     
-    # Usiamo DuckDuckGo: non richiede API Key e non blocca l'IP facilmente come Google
-    query = f'"{nome_query}" sicurezza lavoro OR infortunio OR ferito OR morto OR spisal'
+    # 2. Query "Ampia": Nome + (Termini di cronaca o controlli)
+    # NOTA: Senza virgolette nel nome per permettere flessibilità
+    query = f'{nome_query} incidente OR morto OR infortunio OR spisal'
     
     try:
         with DDGS() as ddgs:
-            # Cerchiamo i primi 5 risultati
-            results = [r for r in ddgs.text(query, region='it-it', safesearch='off', timelimit='y', max_results=5)]
-        
-        if not results:
-            return "✅ Nessuna criticità rilevata nelle news recenti (Fonte: DDG Search).", "green"
-
-        # Analizziamo i titoli e i riassunti (snippet) forniti dai risultati
-        testo_news = " ".join([r['title'] + " " + r['body'] for r in results]).lower()
-        
-        # Parole chiave per far scattare l'alert
-        keywords_alert = ["infortunio", "incidente", "mortale", "grave", "caduta", "spisal", "sequestro", "indagine"]
-        
-        if any(key in testo_news for key in keywords_alert):
-            # Prendiamo il link del primo risultato sospetto
-            return f"⚠️ ALERT SICUREZZA: Rilevate possibili criticità. Verificare qui: {results[0]['href']}", "red"
-        elif "formazione" in testo_news or "certificazione" in testo_news:
-            return f"ℹ️ INFO: Trovate menzioni relative a formazione o protocolli. Fonte: {results[0]['href']}", "orange"
-        else:
-            return "🧐 Monitoraggio completato: non sono emersi alert specifici sulla sicurezza.", "blue"
+            # Cerchiamo 10 risultati: la cronaca locale spesso non è nei primi 2
+            results = [r for r in ddgs.text(query, region='it-it', max_results=10)]
             
-    except Exception as e:
-        return f"⚠️ Servizio di monitoraggio news momentaneamente saturo. Riprova tra poco.", "gray"
+        if not results:
+            return "✅ Nessun alert rilevato nelle ricerche generali.", "green"
 
+        testo_monitoraggio = ""
+        for r in results:
+            testo_monitoraggio += f"{r['title']} {r['body']} ".lower()
+
+        # 3. Analisi dei risultati (Semaforo)
+        if any(word in testo_monitoraggio for word in ["morto", "mortale", "deceduto", "grave"]):
+            return f"🚨 ALERT CRONACA: Trovate notizie di incidenti gravi. Verificare: {results[0]['href']}", "red"
+        
+        if "spisal" in testo_monitoraggio or "ispettorato" in testo_monitoraggio:
+            return f"⚠️ CONTROLLO: Trovate menzioni di ispezioni o verbali. Verificare: {results[0]['href']}", "orange"
+
+        return "ℹ️ Analisi completata: non sono emersi incidenti gravi recenti.", "blue"
+
+    except Exception as e:
+        return f"⚠️ Errore tecnico nella ricerca: {str(e)}", "gray"
 
 # --- 4. INTERFACCIA STREAMLIT ---
 st.title("🏢 Intelligence Aziendale Veneto")
