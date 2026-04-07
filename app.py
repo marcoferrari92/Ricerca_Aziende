@@ -5,6 +5,7 @@ import folium
 from streamlit_folium import st_folium
 from googlesearch import search
 from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
 import time
 
 # --- 1. MAPPATURA TAG (COMPLETA) ---
