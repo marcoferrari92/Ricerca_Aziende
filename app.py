@@ -9,38 +9,14 @@ import time
 
 # Import delle componenti esterne
 from mapping import ATECO_MAP 
-from utils import fetch_data
+from utils import fetch_data, scrape_sito_aziendale
 
-# --- 1. CONFIGURAZIONE PAGINA ---
+# --- CONFIGURAZIONE E STATO ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor")
-
-# --- 2. GESTIONE STATO ---
-if 'results' not in st.session_state: 
-    st.session_state.results = pd.DataFrame()
-if 'pos' not in st.session_state: 
-    st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
+if 'results' not in st.session_state: st.session_state.results = pd.DataFrame()
+if 'pos' not in st.session_state: st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
 
 # --- 3. FUNZIONI DI SCRAPING (Spostate qui per evitare NameError) ---
-
-def scrape_sito_aziendale(url):
-    """FASE 1: Cerca P.IVA ed Email sul sito ufficiale."""
-    if not url or url == 'N.D.': return "N.D.", "N.D.", "N.D."
-    if not url.startswith('http'): url = 'http://' + url
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text()
-        
-        piva = re.search(r'\b\d{11}\b', testo)
-        email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        fatt = re.search(r'fatturato[:\s]*([\d.,]+\s*(?:€|euro|milioni|mln))', testo, re.I)
-        
-        return (piva.group(0) if piva else "N.D.", 
-                email.group(0) if email else "N.D.",
-                fatt.group(1) if fatt else "N.D.")
-    except: return "Errore", "N.D.", "N.D."
-
 def scrape_portale_camerale(piva):
     """FASE 2: Estrazione basata sulla struttura dello screenshot."""
     if piva in ["N.D.", "Errore", "Non trovata"] or len(piva) != 11:
