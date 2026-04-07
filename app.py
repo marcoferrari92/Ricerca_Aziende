@@ -134,36 +134,55 @@ def scrape_portale_camerale(piva):
     except Exception as e:
         return f"Errore: {str(e)[:10]}", "Errore"
 
-# --- 3. INTERFACCIA ---
-
-if 'results' not in st.session_state: st.session_state.results = pd.DataFrame()
-if 'pos' not in st.session_state: st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
-
-st.title("🏭 Business Intelligence Pro")
+# --- 4. INTERFACCIA ---
+st.title("🏭 Business Intelligence Veneto")
 
 with st.sidebar:
+    st.header("Filtri")
     raggio = st.slider("Raggio (KM)", 1, 20, 5)
     scelte = st.multiselect("Settori", list(ATECO_MAP.keys()))
     if st.button("Reset"):
         st.session_state.results = pd.DataFrame()
         st.rerun()
 
-# Sezione 1: Mappa e Ricerca
+# --- MAPPA INTERATTIVA (Sistemata) ---
+st.subheader("1. Area di Ricerca")
 m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
-st_folium(m, width="100%", height=300)
+folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], 
+              radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(m)
 
-if st.button("🚀 1. TROVA AZIENDE NELL'AREA", use_container_width=True):
-    st.session_state.results = fetch_data(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
-    st.rerun()
-
-# Sezione 2: Elaborazione Dati
+# Aggiungi marker se ci sono risultati
 if not st.session_state.results.empty:
+    for _, row in st.session_state.results.iterrows():
+        folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
+
+# Mostra la mappa e cattura il click
+map_data = st_folium(m, width="100%", height=400, key="main_map")
+
+if map_data and map_data.get('last_clicked'):
+    nl, ng = map_data['last_clicked']['lat'], map_data['last_clicked']['lng']
+    if abs(nl - st.session_state.pos['lat']) > 0.001:
+        st.session_state.pos = {'lat': nl, 'lon': ng}
+        st.rerun()
+
+if st.button("🚀 CERCA AZIENDE", use_container_width=True):
+    if scelte:
+        with st.spinner("Ricerca in corso..."):
+            st.session_state.results = fetch_data(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
+            st.rerun()
+    else:
+        st.warning("Seleziona almeno un settore!")
+
+# --- RISULTATI E PULSANTI DI ARRICCHIMENTO ---
+if not st.session_state.results.empty:
+    st.divider()
+    st.subheader("2. Risultati e Arricchimento")
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon']), use_container_width=True)
     
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
     
-    with col1:
-        if st.button("🌐 2. SCANSIONA SITI (P.IVA + EMAIL)", use_container_width=True):
+    with c1:
+        if st.button("🌐 FASE 1: CERCA P.IVA SUI SITI", use_container_width=True):
             df = st.session_state.results.copy()
             bar = st.progress(0)
             for i, row in df.iterrows():
@@ -175,19 +194,20 @@ if not st.session_state.results.empty:
             st.session_state.results = df
             st.rerun()
             
-    with col2:
-        # Il secondo pulsante funziona solo se abbiamo trovato almeno una P.IVA
-        if st.button("📊 3. RICERCA CAMERALE (BILANCI)", use_container_width=True):
+    with c2:
+        if st.button("📊 FASE 2: DATI CAMERALI (FATTURATO)", use_container_width=True):
             df = st.session_state.results.copy()
             bar = st.progress(0)
             for i, row in df.iterrows():
-                f_c, d = scrape_portale_camerale(row['Partita IVA'])
-                df.at[i, 'Fatturato (Camerale)'] = f_c
-                df.at[i, 'Dipendenti'] = d
+                # Procediamo solo se abbiamo una P.IVA valida
+                if row['Partita IVA'] not in ["N.D.", "Errore", "Non trovata"]:
+                    fc, d = scrape_portale_camerale(row['Partita IVA'])
+                    df.at[i, 'Fatturato (Camerale)'] = fc
+                    df.at[i, 'Dipendenti'] = d
                 bar.progress((i + 1) / len(df))
             st.session_state.results = df
             st.rerun()
 
     # Download
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 SCARICA DATABASE CSV", csv, "aziende_bi_veneto.csv", "text/csv")
+    st.download_button("📥 Scarica CSV", csv, "export_aziende.csv", "text/csv")
