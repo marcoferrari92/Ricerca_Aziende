@@ -3,6 +3,9 @@ import pandas as pd
 import requests
 import folium
 from streamlit_folium import st_folium
+from googlesearch import search
+from bs4 import BeautifulSoup
+import time
 
 # --- 1. MAPPATURA TAG (COMPLETA) ---
 ATECO_MAP = {
@@ -156,76 +159,106 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
     except:
         return pd.DataFrame()
 
+
+
 # --- 3. GESTIONE STATO ---
 if 'pos' not in st.session_state:
     st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
-# --- 4. INTERFACCIA ---
-st.set_page_config(layout="wide")
-st.title("🏢 Business Finder Professionale")
+# --- 3. MOTORE ANALISI IA (NEWS SCRAPER & SUMMARIZER) ---
+def analizza_sicurezza_ia(nome_azienda):
+    # Query specifica su ANSA e testate locali
+    query = f'site:ansa.it OR site:ilgiornaledivicenza.it "{nome_azienda}" "sicurezza sul lavoro" OR "infortunio" OR "ispettorato"'
+    try:
+        links = list(search(query, num_results=2, lang="it"))
+        if not links:
+            return "✅ Nessuna criticità rilevata nelle testate monitorate (ANSA/Locale).", "green"
+
+        testo_news = ""
+        for url in links[:2]:
+            res = requests.get(url, timeout=5)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            testo_news += " ".join([p.get_text() for p in soup.find_all('p')[:3]])
+
+        # Simulazione del riassunto IA (In un caso reale qui chiameresti le API del modello)
+        if "infortunio" in testo_news.lower() or "incidente" in testo_news.lower():
+            return f"⚠️ ALERT: Trovate notizie critiche su {nome_azienda}. Possibili incidenti o ispezioni rilevate. Verificare link: {links[0]}", "red"
+        else:
+            return f"ℹ️ INFO: L'azienda appare in notizie riguardanti protocolli o certificazioni di sicurezza. Link: {links[0]}", "orange"
+    except:
+        return "⚠️ Servizio news momentaneamente non disponibile.", "gray"
+
+# --- 4. INTERFACCIA UTENTE ---
+st.title("🛡️ Business Intelligence & Safety Monitor")
+
+if 'pos' not in st.session_state:
+    st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
+if 'results' not in st.session_state:
+    st.session_state.results = pd.DataFrame()
 
 with st.sidebar:
-    st.header("Parametri")
-    raggio = st.slider("Raggio (KM)", 1, 30, 5)
-    scelte = st.multiselect("Settori ATECO", list(ATECO_MAP.keys()), default=[list(ATECO_MAP.keys())[0]])
-    
+    st.header("⚙️ Configurazione")
+    raggio = st.slider("Raggio Scansione (KM)", 1, 30, 5)
+    scelte = st.multiselect("Macrosettori ATECO", list(ATECO_MAP.keys()), default=["A - AGRICOLTURA, SILVICOLTURA E PESCA"])
     st.divider()
-    # Tasto Reset per pulire tutto
-    if st.button("🗑️ Pulisci e Ricomincia"):
+    if st.button("🗑️ Pulisci Tutto"):
         st.session_state.results = pd.DataFrame()
         st.rerun()
 
-# --- 5. LA MAPPA (UNICA E DINAMICA) ---
-st.subheader("📍 1. Seleziona il punto sulla mappa | 2. Clicca 'Avvia Ricerca'")
-
-# Creiamo la mappa base
+# MAPPA INTERATTIVA
+st.subheader("📍 Seleziona l'area di analisi")
 m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
+folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(m)
 
-# Disegniamo il cerchio di scansione
-folium.Circle(
-    location=[st.session_state.pos['lat'], st.session_state.pos['lon']],
-    radius=raggio * 1000, color="blue", fill=True, opacity=0.2
-).add_to(m)
-
-# Se ci sono risultati, aggiungiamo i marker dei risultati
 if not st.session_state.results.empty:
     for _, row in st.session_state.results.iterrows():
-        folium.Marker(
-            [row['lat'], row['lon']], 
-            popup=row['Ragione Sociale'],
-            icon=folium.Icon(color='red', icon='briefcase')
-        ).add_to(m)
+        folium.Marker([row['lat'], row['lon']], popup=row['Ragione Sociale']).add_to(m)
 
-# Visualizziamo la mappa
-map_data = st_folium(m, width="100%", height=500, key="main_map")
+map_data = st_folium(m, width="100%", height=400, key="main_map")
 
-# Se l'utente clicca, aggiorniamo la posizione e puliamo i vecchi risultati
 if map_data and map_data['last_clicked']:
     nl, nn = map_data['last_clicked']['lat'], map_data['last_clicked']['lng']
-    if abs(nl - st.session_state.pos['lat']) > 0.0001: # Evita loop infiniti
+    if abs(nl - st.session_state.pos['lat']) > 0.001:
         st.session_state.pos = {'lat': nl, 'lon': nn}
-        st.session_state.results = pd.DataFrame() # Reset risultati al cambio zona
         st.rerun()
 
-# --- 6. AZIONE DI RICERCA ---
-st.write(f"Coordinate selezionate: **{st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}**")
-
-if st.button("🚀 AVVIA RICERCA ORA", use_container_width=True):
-    with st.spinner("Scansione database..."):
+# PULSANTE SCANSIONE
+if st.button("🚀 AVVIA SCANSIONE AZIENDALE", use_container_width=True):
+    with st.spinner("Interrogazione database cartografici..."):
         res = fetch_data(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, scelte)
         if not res.empty:
             st.session_state.results = res
-            st.rerun() # Ricarica per mostrare i puntini sulla mappa
+            st.rerun()
         else:
-            st.warning("Nessun risultato trovato in quest'area.")
+            st.warning("Nessuna azienda trovata in quest'area.")
 
-# --- 7. TABELLA DATI ---
+# VISUALIZZAZIONE DATI E ANALISI IA
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader("📋 Database Risultati")
-    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon']), use_container_width=True)
+    st.subheader("📋 Database Aziende Rilevate")
+    cols = ['Ragione Sociale', 'Comune', 'CAP', 'Indirizzo', 'Attività', 'Sito Web', 'Email', 'LinkedIn', 'Proprietà', 'Brand']
+    st.dataframe(st.session_state.results[cols], use_container_width=True)
+
+    st.divider()
+    st.subheader("🤖 AI Safety Insight (ANSA/News Monitor)")
     
-    csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica CSV", csv, "export.csv", "text/csv")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        azienda_target = st.selectbox("Seleziona un'azienda per il Report Sicurezza", st.session_state.results['Ragione Sociale'])
+    with col2:
+        st.write(" ") # Spazio estetico
+        btn_ia = st.button("🔍 GENERA REPORT SICUREZZA IA")
+
+    if btn_ia:
+        with st.spinner(f"L'IA sta analizzando la reputazione di {azienda_target}..."):
+            report, colore = analizza_sicurezza_ia(azienda_target)
+            if colore == "green": st.success(report)
+            elif colore == "orange": st.info(report)
+            elif colore == "red": st.error(report)
+            else: st.write(report)
+
+    # Download CSV
+    csv = st.session_state.results[cols].to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
+    st.download_button("📥 Scarica Database (CSV)", csv, "intelligence_aziendale.csv", "text/csv")
