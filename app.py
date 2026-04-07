@@ -1,112 +1,85 @@
 import streamlit as st
-import requests
 import pandas as pd
+import requests
 import folium
 from streamlit_folium import st_folium
 
-# --- TRADUTTORE TECNICO ATECO -> TAG PRECISI ---
-# Qui usiamo solo i tag che "esistono" davvero nel database cartografico
-ATECO_TAGS = {
-    "A - AGRICOLTURA": ["node['landuse'='farmyard']", "way['landuse'='farmyard']", "node['shop'='farm']", "node['craft'='winery']"],
-    "B - ESTRATTIVE": ["node['landuse'='quarry']", "way['landuse'='quarry']"],
-    "C - MANIFATTURIERE": ["node['industrial'='factory']", "way['industrial'='factory']", "node['craft'='sawmill']"],
-    "G - COMMERCIO": ["node['shop'='supermarket']", "node['shop'='wholesale']", "node['shop'='retail']"],
-    "I - RISTORAZIONE/HOTEL": ["node['amenity'='restaurant']", "node['amenity'='cafe']", "node['tourism'='hotel']"],
-    "K - INFORMATICA": ["node['office'='it']", "node['office'='telecommunication']"],
-    "N - PROFESSIONALI": ["node['office'='lawyer']", "node['office'='architect']", "node['office'='accountant']"]
-}
-
-def fetch_data_clean(lat, lon, raggio_km, macrosettori):
-    url = "http://overpass-api.de/api/interpreter"
-    raggio_m = raggio_km * 1000
+# --- PARTE A: IL MOTORE (Riceve le coordinate e cerca) ---
+def fetch_data_overpass(lat, lon, raggio_km, settori_ateco):
+    url = "https://overpass-api.de/api/interpreter"
+    raggio_metri = raggio_km * 1000
     
-    # Costruiamo i filtri basandoci sui tag precisi
-    filtri_query = ""
-    for ms in macrosettori:
-        for tag_completo in ATECO_TAGS.get(ms, []):
-            # Aggiungiamo il filtro (around:raggio, lat, lon) a ogni tag
-            filtri_query += f"{tag_completo}(around:{raggio_m},{lat},{lon});\n"
+    # Mappatura tag (ridotta per esempio)
+    mappa_tag = {
+        "A - AGRICOLTURA": "node['landuse'='farmyard']",
+        "C - MANIFATTURIERE": "node['industrial'='factory']",
+        "I - RISTORAZIONE": "node['amenity'='restaurant']"
+    }
+    
+    # Costruiamo la query usando le coordinate passate
+    filtri = ""
+    for s in settori_ateco:
+        tag = mappa_tag.get(s)
+        if tag:
+            filtri += f"{tag}(around:{raggio_metri},{lat},{lon});\n"
 
-    query = f"""
-    [out:json][timeout:90];
-    (
-      {filtri_query}
-    );
-    out tags center;
-    """
+    query = f"[out:json][timeout:90];({filtri});out tags center;"
     
     try:
-        response = requests.get(url, params={'data': query}, timeout=100)
-        response.raise_for_status()
-        elements = response.json().get('elements', [])
-        
-        risultati = []
-        for el in elements:
-            t = el.get('tags', {})
-            if 'name' in t:
-                # Coordinate: se è una way (area), Overpass 'center' le mette in el['center']
-                r_lat = el.get('lat') or el.get('center', {}).get('lat')
-                r_lon = el.get('lon') or el.get('center', {}).get('lon')
-                
-                risultati.append({
-                    'Ragione Sociale': t.get('name'),
-                    'Comune': t.get('addr:city', 'N.D.'),
-                    'Indirizzo': f"{t.get('addr:street', '')} {t.get('addr:housenumber', '')}".strip() or 'N.D.',
-                    'Telefono': t.get('phone', 'N.D.'),
-                    'Sito Web': t.get('website', 'N.D.'),
-                    'lat': r_lat,
-                    'lon': r_lon
-                })
-        return pd.DataFrame(risultati)
-    except Exception as e:
-        st.error(f"Errore tecnico: {e}")
+        r = requests.get(url, params={'data': query})
+        elements = r.json().get('elements', [])
+        return pd.DataFrame([{'Nome': e['tags'].get('name', 'N.D.'), 'Lat': e.get('lat') or e.get('center', {}).get('lat'), 'Lon': e.get('lon') or e.get('center', {}).get('lon')} for e in elements if 'name' in e['tags']])
+    except:
         return pd.DataFrame()
 
-# --- INTERFACCIA STREAMLIT ---
-st.set_page_config(page_title="Business Finder Vicenza", layout="wide")
-st.title("📍 Localizzatore Aziende Vicentine")
+# --- PARTE B: L'INTERFACCIA (Raccoglie i dati) ---
+st.title("🚜 ATECO Finder Interattivo")
 
-with st.sidebar:
-    st.header("1. Imposta Ricerca")
-    raggio = st.slider("Raggio (KM)", 1, 20, 5)
-    settori = st.multiselect("Macrosettori ATECO", options=list(ATECO_TAGS.keys()), default=["A - AGRICOLTURA"])
-    st.write("---")
-    st.write("📌 **Istruzioni:**")
-    st.write("Clicca sulla mappa a destra per scegliere il punto centrale. Apparirà il tasto per cercare.")
+# 1. Inizializziamo il 'Post-it' se è la prima volta che apriamo l'app
+if 'punto_cliccato' not in st.session_state:
+    st.session_state.punto_cliccato = {'lat': 45.547, 'lon': 11.545} # Default Vicenza
 
-# Mappa interattiva per il click
-st.subheader("Mappa Interattiva: Clicca dove vuoi cercare")
-m = folium.Map(location=[45.547, 11.546], zoom_start=11)
-map_click = st_folium(m, width="100%", height=500)
+# Sidebar per raggio e settori
+raggio = st.sidebar.slider("Raggio (KM)", 1, 30, 5)
+settori = st.sidebar.multiselect("Settori", ["A - AGRICOLTURA", "C - MANIFATTURIERE", "I - RISTORAZIONE"], default=["A - AGRICOLTURA"])
 
-if map_click and map_click['last_clicked']:
-    lat = map_click['last_clicked']['lat']
-    lon = map_click['last_clicked']['lng']
+# 2. Mostriamo la mappa e catturiamo il click
+m = folium.Map(location=[st.session_state.punto_cliccato['lat'], st.session_state.punto_cliccato['lon']], zoom_start=12)
+
+# Disegniamo il raggio visivo basandoci sul 'Post-it'
+folium.Circle(
+    location=[st.session_state.punto_cliccato['lat'], st.session_state.punto_cliccato['lon']],
+    radius=raggio * 1000,
+    color="red", fill=True, opacity=0.2
+).add_to(m)
+
+st.write("### 1. Clicca sulla mappa per spostare il centro")
+mappa_interattiva = st_folium(m, width=700, height=400)
+
+# 3. COMUNICAZIONE: Se l'utente clicca, aggiorniamo il 'Post-it'
+if mappa_interattiva and mappa_interattiva['last_clicked']:
+    nuova_lat = mappa_interattiva['last_clicked']['lat']
+    nuova_lon = mappa_interattiva['last_clicked']['lng']
     
-    st.success(f"Centro impostato! Coordinate: {lat:.4f}, {lon:.4f}")
+    # Se il click è diverso da quello salvato, aggiorna e ricarica
+    if nuova_lat != st.session_state.punto_cliccato['lat']:
+        st.session_state.punto_cliccato = {'lat': nuova_lat, 'lon': nuova_lon}
+        st.rerun()
+
+# 4. IL PONTE: Il tasto prende i dati dal 'Post-it' e li manda alla Funzione
+st.write(f"📍 Centro attuale: {st.session_state.punto_cliccato['lat']:.4f}, {st.session_state.punto_cliccato['lon']:.4f}")
+
+if st.button("🚀 AVVIA RICERCA AZIENDE"):
+    # Qui avviene la magia: passiamo i dati dal session_state alla funzione di ricerca
+    risultati = fetch_data_overpass(
+        st.session_state.punto_cliccato['lat'], 
+        st.session_state.punto_cliccato['lon'], 
+        raggio, 
+        settori
+    )
     
-    if st.button("🚀 AVVIA RICERCA IN QUESTA AREA"):
-        with st.spinner("Interrogazione database in corso..."):
-            df = fetch_data_clean(lat, lon, raggio, settori)
-            
-            if not df.empty:
-                st.balloons()
-                st.metric("Aziende trovate", len(df))
-                
-                # Tabella Risultati
-                st.dataframe(df.drop(columns=['lat', 'lon']), use_container_width=True)
-                
-                # Download
-                csv = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-                st.download_button("📥 Scarica Excel (CSV)", csv, "aziende_estratte.csv", "text/csv")
-                
-                # Mappa dei risultati
-                res_map = folium.Map(location=[lat, lon], zoom_start=13)
-                folium.Circle([lat, lon], radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(res_map)
-                for _, row in df.iterrows():
-                    folium.Marker([row['lat'], row['lon']], popup=row['Ragione Sociale']).add_to(res_map)
-                st_folium(res_map, width="100%", height=500, key="result_map")
-            else:
-                st.warning("⚠️ Nessun dato trovato. Prova ad aumentare il raggio o cambiare punto.")
-else:
-    st.info("👈 Clicca sulla mappa sopra per iniziare.")
+    if not risultati.empty:
+        st.success(f"Trovate {len(risultati)} aziende!")
+        st.dataframe(risultati)
+    else:
+        st.warning("Nessun risultato. Prova a spostare il punto o aumentare il raggio.")
