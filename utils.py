@@ -73,8 +73,8 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
 
 def scrape_sito_aziendale(url):
     """
-    Estrae P.IVA ed Email. 
-    Se non trova nulla in Home, esplora le sottopagine comuni.
+    Estrae P.IVA ed Email esplorando Home e sottopagine.
+    Ottimizzato per siti industriali (settore C.25).
     """
     if not url or url == 'N.D.':
         return "N.D.", "N.D."
@@ -82,53 +82,66 @@ def scrape_sito_aziendale(url):
     if not url.startswith('http'):
         url = 'http://' + url
 
+    # Headers potenziati per evitare blocchi "Bot Detection"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.google.com/'
     }
 
-    # Sottopagine probabili dove trovare dati legali
-    suffixes = ["", "/contatti", "/contacts", "/chi-siamo", "/about", "/privacy-policy"]
+    # Ordine di ricerca logico per aziende italiane
+    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy", "/legal-notices"]
     
     piva_final = "Non trovata"
     email_final = "Non trovata"
 
-    # Regex potenziata: gestisce prefissi, spazi e punti
-    piva_pattern = r'(?:IT)?\s?(\d{3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{2})'
+    # REGEX UNIVERSALE: 
+    # Cerca stringhe che somigliano a una P.IVA precedute da etichette comuni
+    # Gestisce: P.I. 00262380249, Partita IVA: 00262380249, IT00262380249, ecc.
+    piva_pattern = r'(?:IT|P\.IVA|P\.I\.|C\.F\.|IVA)?\s?(\d{2,3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{2})'
 
     for suffix in suffixes:
         try:
             full_url = url.rstrip('/') + suffix
-            response = requests.get(full_url, headers=headers, timeout=5) # Timeout breve per non rallentare troppo
+            response = requests.get(full_url, headers=headers, timeout=8, verify=False)
             
             if response.status_code != 200:
                 continue
                 
             soup = BeautifulSoup(response.text, 'html.parser')
-            # Pulizia testo: rimuoviamo script e stili che possono sporcare le regex
-            for script in soup(["script", "style"]):
-                script.decompose()
             
+            # Pulizia profonda: togliamo navigazione e codici che creano falsi positivi
+            for element in soup(["script", "style", "nav", "header", "footer_links"]):
+                element.decompose()
+            
+            # Prendiamo il testo pulito
             testo = " ".join(soup.get_text().split())
 
-            # Cerca P.IVA se non ancora trovata
+            # 1. Ricerca P.IVA
             if piva_final == "Non trovata":
-                piva_match = re.search(piva_pattern, testo)
-                if piva_match:
-                    piva_pulita = "".join(filter(str.isdigit, piva_match.group(1)))
-                    if len(piva_pulita) == 11:
-                        piva_final = piva_pulita
+                matches = re.findall(piva_pattern, testo)
+                for m in matches:
+                    # Rimuoviamo ogni carattere non numerico per il controllo finale
+                    cifre = "".join(filter(str.isdigit, m))
+                    if len(cifre) == 11:
+                        piva_final = cifre
+                        break # Trovata, usciamo dal loop dei match
 
-            # Cerca Email se non ancora trovata
+            # 2. Ricerca Email
             if email_final == "Non trovata":
                 email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
                 if email_match:
-                    email_final = email_match.group(0)
+                    # Evitiamo di prendere email di webmaster o grafici se possibile
+                    temp_email = email_match.group(0).lower()
+                    if "webmaster" not in temp_email and "pixel" not in temp_email:
+                        email_final = temp_email
 
-            # Se abbiamo trovato entrambi, usciamo dal ciclo delle sottopagine
+            # Se abbiamo trovato entrambi i dati core, interrompiamo la scansione delle sottopagine
             if piva_final != "Non trovata" and email_final != "Non trovata":
                 break
                 
-        except:
+        except Exception:
             continue
 
     return piva_final, email_final
