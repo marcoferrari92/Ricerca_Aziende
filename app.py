@@ -118,13 +118,13 @@ if not st.session_state.results.empty:
                 df_work.at[idx, 'Partita IVA'] = piva
                 if row.get('Email') == 'N.D.':
                     df_work.at[idx, 'Email'] = email_web
-                
+                """
                 piva_clean = "".join(filter(str.isdigit, str(piva)))
                 if len(piva_clean) == 11:
                     fatt, dip = scrape_camerale_data(piva_clean)
                     df_work.at[idx, 'Fatturato'] = fatt
                     df_work.at[idx, 'Dipendenti'] = dip
-            
+                """
             progress_bar.progress((i + 1) / count)
         
         st.session_state.results = df_work
