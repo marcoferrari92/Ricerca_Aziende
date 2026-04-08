@@ -9,12 +9,13 @@ import urllib3
 from bs4 import BeautifulSoup
 import time
 
+
 # Disabilita gli avvisi fastidiosi per i siti senza certificato sicuro
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import delle componenti esterne
 from mapping import ATECO_MAP 
-from utils import fetch_data, scrape_sito_aziendale, scrape_camerale_data
+from utils import fetch_data,fetch_data_google, scrape_sito_aziendale, scrape_camerale_data
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor")
