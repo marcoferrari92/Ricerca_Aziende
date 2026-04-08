@@ -205,59 +205,53 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 def scrape_camerale_data(piva):
+    """
+    Tenta di recuperare dati di bilancio con log dettagliato.
+    """
     if not piva or len(piva) != 11:
         return "P.IVA non valida", "N.D."
     
-    # ReportAziende usa spesso questo formato per le schede dirette
-    # Nota: se non esiste, il sito reindirizza alla ricerca
+    # Proviamo un aggregatore diverso o una ricerca più generica
+    # Nota: ReportAziende spesso richiede un percorso basato sul nome, 
+    # la ricerca per P.IVA via URL diretto può essere bloccata.
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     }
 
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
+        res = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        
+        # LOG DI DEBUG NELLA CONSOLE DI STREAMLIT
+        print(f"DEBUG BILANCIO - P.IVA: {piva} | Status: {res.status_code} | URL finale: {res.url}")
 
-        # --- DEBUG: Vedere cosa legge lo script ---
-        # Questo stamperà i primi 1000 caratteri del testo catturato nel terminale
-        testo_completo = soup.get_text(separator=' ', strip=True)
-        print(f"--- DEBUG P.IVA {piva} ---")
-        print(testo_completo[:1000]) 
-        # ------------------------------------------
+        if res.status_code != 200:
+            return f"Errore {res.status_code}", "N.D."
+
+        soup = BeautifulSoup(res.text, 'html.parser')
+        testo = soup.get_text(separator=' ', strip=True)
+
+        # Se il testo è molto corto, probabilmente siamo stati bloccati
+        if len(testo) < 500:
+            return "Sito Protetto (Bot Block)", "N.D."
 
         fatturato = "N.D."
         dipendenti = "N.D."
 
-        # Su ReportAziende i dati sono spesso in tabelle o div con classi specifiche
-        # Cerchiamo i pattern testuali nel testo pulito
-        
-        # 1. Ricerca Fatturato (Pattern: "Fatturato: € 1.234.000")
-        import re
-        # Cerchiamo una cifra preceduta da "Fatturato" e seguita da € o spazi
-        fatt_match = re.search(r'Fatturato.*?([\d\.]+)', testo_completo, re.IGNORECASE)
+        # Cerchiamo i dati nel testo con regex più flessibili
+        # Pattern per Fatturato: cerca numeri dopo la parola fatturato
+        fatt_match = re.search(r'(?:Fatturato|Volume d\'affari).*?([\d\.,]+)', testo, re.IGNORECASE)
         if fatt_match:
-            fatturato = fatt_match.group(1) + " €"
+            fatturato = fatt_match.group(1).rstrip('.') + " €"
 
-        # 2. Ricerca Dipendenti (Pattern: "Dipendenti: 10")
-        dip_match = re.search(r'Dipendenti.*?(\d+)', testo_completo, re.IGNORECASE)
+        # Pattern per Dipendenti
+        dip_match = re.search(r'(?:Dipendenti|Addetti).*?(\d+)', testo, re.IGNORECASE)
         if dip_match:
             dipendenti = dip_match.group(1)
-
-        # Se ancora N.D., proviamo a cercare nelle tabelle specifiche di quel sito
-        if fatturato == "N.D.":
-            for riga in soup.find_all('tr'):
-                cella = riga.get_text().lower()
-                if 'fatturato' in cella:
-                    # Estrae il numero dalla riga
-                    numeri = re.findall(r'[\d\.]+', riga.get_text())
-                    if numeri: fatturato = numeri[0] + " €"
-                if 'dipendenti' in cella:
-                    numeri = re.findall(r'\d+', riga.get_text())
-                    if numeri: dipendenti = numeri[0]
 
         return fatturato, dipendenti
 
     except Exception as e:
-        return f"Errore: {str(e)}", "N.D."
+        return f"Errore: {str(e)[:20]}", "N.D."
