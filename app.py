@@ -107,28 +107,46 @@ if not st.session_state.results.empty:
     if st.button("🔍 ESTRAI DATI COMPLETI", use_container_width=True):
         df_work = st.session_state.results.copy()
         progress_bar = st.progress(0)
-        status_msg = st.empty()
+        
+        # --- NUOVA AREA LOG ---
+        st.subheader("🖥️ Log di Elaborazione")
+        status_container = st.empty() # Area per il messaggio principale
+        log_container = st.expander("Mostra dettagli tecnici", expanded=True)
+        log_text = "" # Qui accumuliamo le righe del log
         
         count = len(df_work)
         for i, (idx, row) in enumerate(df_work.iterrows()):
-            if row['Sito Web'] and row['Sito Web'] != 'N.D.':
-                status_msg.text(f"Analisi ({i+1}/{count}): {row['Ragione Sociale']}...")
+            nome_az = row['Ragione Sociale']
+            status_container.info(f"⏳ Elaborazione {i+1}/{count}: **{nome_az}**")
+            
+            # 1. Scraping Sito
+            log_text += f"🌐 {nome_az}: Analisi sito {row['Sito Web']}...\n"
+            log_container.code(log_text) # Aggiorna il box del codice
+            
+            piva, email_web = scrape_sito_aziendale(row['Sito Web'])
+            df_work.at[idx, 'Partita IVA'] = piva
+            
+            if row.get('Email') == 'N.D.':
+                df_work.at[idx, 'Email'] = email_web
+            
+            # 2. Dati Camerali (Bilancio)
+            piva_clean = "".join(filter(str.isdigit, str(piva)))
+            if len(piva_clean) == 11:
+                log_text += f"   ﹂ P.IVA trovata: {piva_clean}. Cerco bilancio...\n"
+                log_container.code(log_text)
                 
-                piva, email_web = scrape_sito_aziendale(row['Sito Web'])
-                df_work.at[idx, 'Partita IVA'] = piva
-                if row.get('Email') == 'N.D.':
-                    df_work.at[idx, 'Email'] = email_web
-                
-                piva_clean = "".join(filter(str.isdigit, str(piva)))
-                if len(piva_clean) == 11:
-                    fatt, dip = scrape_camerale_data(piva_clean)
-                    df_work.at[idx, 'Fatturato'] = fatt
-                    df_work.at[idx, 'Dipendenti'] = dip
-                
+                fatt, dip = scrape_camerale_data(piva_clean)
+                df_work.at[idx, 'Fatturato'] = fatt
+                df_work.at[idx, 'Dipendenti'] = dip
+                log_text += f"   ﹂ Risultato: {fatt}, {dip} dipendenti.\n"
+            else:
+                log_text += f"   ﹂ ⚠️ P.IVA non trovata o non valida.\n"
+            
+            log_container.code(log_text)
             progress_bar.progress((i + 1) / count)
         
         st.session_state.results = df_work
-        status_msg.success("✅ Arricchimento completato!")
+        status_container.success("✅ Arricchimento completato!")
         st.rerun()
 
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
