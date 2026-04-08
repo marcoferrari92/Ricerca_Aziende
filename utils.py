@@ -134,6 +134,16 @@ def scrape_camerale_data(piva):
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     gmaps = googlemaps.Client(key=api_key)
+
+    try:
+        response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
+    except googlemaps.exceptions.ApiError as e:
+        # Questo mostrerà a video se manca il Billing, se l'API è spenta o la Key è errata
+        st.error(f"⚠️ Errore Google Maps: {e.status}")
+    if e.status == "REQUEST_DENIED":
+        st.write("Verifica di aver abilitato la 'Places API' e che il Billing sia attivo.")
+    return pd.DataFrame()
+
     ris = []
     raggio_m = int(raggio_km * 1000)
     
