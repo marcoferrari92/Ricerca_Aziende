@@ -97,44 +97,50 @@ def scrape_sito_aziendale(url):
 
 import googlemaps
 
+@st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, macrosettori, api_key):
     gmaps = googlemaps.Client(key=api_key)
     ris = []
     raggio_m = int(raggio_km * 1000)
 
-    # Google richiede tipi specifici (es. 'establishment', 'store', 'factory')
-    # Dovrai mappare i tuoi macrosettori ATECO a questi tipi di Google
     for settore in macrosettori:
-        # Nota: Google permette una ricerca per 'keyword' (testo libero) 
-        # o 'type' (categorie fisse). La keyword è più flessibile per i settori ATECO.
-        
+        # 1. Ricerca nearby (Prende una lista di Place ID)
         places_result = gmaps.places_nearby(
             location=(lat, lon),
             radius=raggio_m,
-            keyword=settore # Es: "Produzione Metalmeccanica" o "Software House"
+            keyword=settore
         )
 
+        # Usiamo un placeholder per aggiornare l'utente in tempo reale
         for place in places_result.get('results', []):
-            # Per avere l'email e il sito web, Google richiede una seconda chiamata 
-            # specifica per il 'place_id' (Place Details)
-            details = gmaps.place(place['place_id'], 
-                                 fields=['name', 'formatted_address', 'website', 'geometry'])['result']
-            
-            lat_res = details['geometry']['location']['lat']
-            lon_res = details['geometry']['location']['lng']
-            
-            ris.append({
-                'Ragione Sociale': details.get('name', 'N.D.'),
-                'Indirizzo': details.get('formatted_address', 'N.D.'),
-                'Sito Web': details.get('website', 'N.D.'),
-                'Email': 'N.D.', # Google raramente fornisce l'email direttamente
-                'Partita IVA': 'N.D.',
-                'Fatturato': 'N.D.',
-                'Dipendenti': 'N.D.',
-                'lat': lat_res,
-                'lon': lon_res
-            })
-            
+            # 2. Place Details (Necessario per il SITO WEB)
+            # ATTENZIONE: Questa chiamata ha un costo separato. 
+            # Se hai 20 risultati, farai 20 chiamate Details.
+            try:
+                details = gmaps.place(
+                    place['place_id'], 
+                    fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
+                    language='it'
+                )['result']
+                
+                # Escludiamo attività chiuse permanentemente
+                if details.get('business_status') != 'OPERATIONAL':
+                    continue
+
+                ris.append({
+                    'Ragione Sociale': details.get('name', 'N.D.'),
+                    'Indirizzo': details.get('formatted_address', 'N.D.'),
+                    'Sito Web': details.get('website', 'N.D.'),
+                    'Email': 'N.D.',
+                    'Partita IVA': 'N.D.',
+                    'Fatturato': 'N.D.',
+                    'Dipendenti': 'N.D.',
+                    'lat': details['geometry']['location']['lat'],
+                    'lon': details['geometry']['location']['lng']
+                })
+            except Exception as e:
+                st.error(f"Errore nel recupero dettagli per {place.get('name')}: {e}")
+                
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale'])
 
 
