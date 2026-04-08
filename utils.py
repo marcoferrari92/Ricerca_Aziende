@@ -205,40 +205,59 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 def scrape_camerale_data(piva):
-    """
-    Tenta di recuperare fatturato e dipendenti da aggregatori pubblici.
-    """
-    if not piva or piva == "Non trovata":
-        return "Richiede P.IVA", "N.D."
+    if not piva or len(piva) != 11:
+        return "P.IVA non valida", "N.D."
     
-    # Esempio su un aggregatore (Nota: l'URL potrebbe variare nel tempo)
-    url = f"https://www.reportaziende.it/ricerca?piva={piva}"
+    # ReportAziende usa spesso questo formato per le schede dirette
+    # Nota: se non esiste, il sito reindirizza alla ricerca
+    url = f"https://www.reportaziende.it/ricerca?q={piva}"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     }
 
     try:
         res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Qui dovresti cercare i tag specifici del sito
-        # Esempio teorico (ogni sito ha i suoi ID):
+
+        # --- DEBUG: Vedere cosa legge lo script ---
+        # Questo stamperà i primi 1000 caratteri del testo catturato nel terminale
+        testo_completo = soup.get_text(separator=' ', strip=True)
+        print(f"--- DEBUG P.IVA {piva} ---")
+        print(testo_completo[:1000]) 
+        # ------------------------------------------
+
         fatturato = "N.D."
         dipendenti = "N.D."
+
+        # Su ReportAziende i dati sono spesso in tabelle o div con classi specifiche
+        # Cerchiamo i pattern testuali nel testo pulito
         
-        # Logica di esempio: cerchiamo nel testo della pagina
-        testo = soup.get_text()
-        
-        # Regex per fatturato (cerca numeri seguiti da € o milioni)
-        fatt_match = re.search(r'Fatturato:\s?([\d\.]+)', testo)
+        # 1. Ricerca Fatturato (Pattern: "Fatturato: € 1.234.000")
+        import re
+        # Cerchiamo una cifra preceduta da "Fatturato" e seguita da € o spazi
+        fatt_match = re.search(r'Fatturato.*?([\d\.]+)', testo_completo, re.IGNORECASE)
         if fatt_match:
             fatturato = fatt_match.group(1) + " €"
-            
-        dip_match = re.search(r'Dipendenti:\s?(\d+)', testo)
+
+        # 2. Ricerca Dipendenti (Pattern: "Dipendenti: 10")
+        dip_match = re.search(r'Dipendenti.*?(\d+)', testo_completo, re.IGNORECASE)
         if dip_match:
             dipendenti = dip_match.group(1)
 
+        # Se ancora N.D., proviamo a cercare nelle tabelle specifiche di quel sito
+        if fatturato == "N.D.":
+            for riga in soup.find_all('tr'):
+                cella = riga.get_text().lower()
+                if 'fatturato' in cella:
+                    # Estrae il numero dalla riga
+                    numeri = re.findall(r'[\d\.]+', riga.get_text())
+                    if numeri: fatturato = numeri[0] + " €"
+                if 'dipendenti' in cella:
+                    numeri = re.findall(r'\d+', riga.get_text())
+                    if numeri: dipendenti = numeri[0]
+
         return fatturato, dipendenti
-    except:
-        return "Errore connessione", "N.D."
+
+    except Exception as e:
+        return f"Errore: {str(e)}", "N.D."
