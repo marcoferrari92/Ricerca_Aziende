@@ -6,3 +6,5 @@ streamlit-folium
 googlesearch-python
 beautifulsoup4
 duckduckgo-search
+googlemaps
+urllib3
