@@ -95,6 +95,47 @@ def scrape_sito_aziendale(url):
         return "Errore Sito", "N.D."
 
 
+import googlemaps
+
+def fetch_data_google(lat, lon, raggio_km, macrosettori, api_key):
+    gmaps = googlemaps.Client(key=api_key)
+    ris = []
+    raggio_m = int(raggio_km * 1000)
+
+    # Google richiede tipi specifici (es. 'establishment', 'store', 'factory')
+    # Dovrai mappare i tuoi macrosettori ATECO a questi tipi di Google
+    for settore in macrosettori:
+        # Nota: Google permette una ricerca per 'keyword' (testo libero) 
+        # o 'type' (categorie fisse). La keyword è più flessibile per i settori ATECO.
+        
+        places_result = gmaps.places_nearby(
+            location=(lat, lon),
+            radius=raggio_m,
+            keyword=settore # Es: "Produzione Metalmeccanica" o "Software House"
+        )
+
+        for place in places_result.get('results', []):
+            # Per avere l'email e il sito web, Google richiede una seconda chiamata 
+            # specifica per il 'place_id' (Place Details)
+            details = gmaps.place(place['place_id'], 
+                                 fields=['name', 'formatted_address', 'website', 'geometry'])['result']
+            
+            lat_res = details['geometry']['location']['lat']
+            lon_res = details['geometry']['location']['lng']
+            
+            ris.append({
+                'Ragione Sociale': details.get('name', 'N.D.'),
+                'Indirizzo': details.get('formatted_address', 'N.D.'),
+                'Sito Web': details.get('website', 'N.D.'),
+                'Email': 'N.D.', # Google raramente fornisce l'email direttamente
+                'Partita IVA': 'N.D.',
+                'Fatturato': 'N.D.',
+                'Dipendenti': 'N.D.',
+                'lat': lat_res,
+                'lon': lon_res
+            })
+            
+    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale'])
 
 
 
