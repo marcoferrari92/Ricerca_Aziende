@@ -44,20 +44,48 @@ if map_data and map_data['last_clicked']:
     st.session_state.pos = {'lat': map_data['last_clicked']['lat'], 'lon': map_data['last_clicked']['lng']}
     st.rerun()
 
-# --- RICERCA ---
-if st.button("🚀 AVVIA RICERCA GOOGLE MAPS", use_container_width=True, type="primary"):
-    if not api_key:
-        st.error("Inserisci la chiave!")
+# --- BOTTONE DI RICERCA GOOGLE ---
+if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", use_container_width=True, type="primary"):
+    if not user_api_key:
+        st.error("❌ Manca la API Key! Inseriscila nella barra laterale.")
     elif not scelte:
-        st.warning("Scegli un settore!")
+        st.warning("⚠️ Seleziona almeno un settore!")
     else:
-        kws = []
-        for s in scelte: kws.extend(ATECO_MAP.get(s, [s]))
+        # Prepariamo le keyword
+        keywords_finali = []
+        for s in scelte:
+            keywords_finali.extend(ATECO_MAP.get(s, [s]))
         
-        with st.status("Ricerca in corso...", expanded=True) as status:
-            df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, kws, api_key, limite)
-            st.session_state.results = df
-            status.update(label="Fatto!", state="complete")
+        with st.status("🔍 Connessione a Google Maps in corso...", expanded=True) as status:
+            st.write(f"📡 Invio richiesta per {len(keywords_finali)} categorie...")
+            
+            # Placeholder per i log di debug
+            log_google = st.empty()
+            
+            try:
+                # Eseguiamo la ricerca
+                df = fetch_data_google(
+                    st.session_state.pos['lat'], 
+                    st.session_state.pos['lon'], 
+                    raggio, 
+                    keywords_finali, 
+                    user_api_key, 
+                    max_results=max_test
+                )
+                
+                if df.empty:
+                    st.error("❓ Google ha risposto, ma non ha trovato NULLA in questa zona con queste keyword.")
+                    st.write("Suggerimento: Prova ad aumentare il raggio o a cambiare zona cliccando sulla mappa.")
+                else:
+                    st.session_state.results = df
+                    st.success(f"✅ Centro! Trovate {len(df)} aziende uniche.")
+                    status.update(label="Scansione Completata!", state="complete", expanded=False)
+                    
+            except Exception as e:
+                st.error(f"💥 ERRORE DURANTE LA CHIAMATA A GOOGLE: {e}")
+                st.write("Controlla che la tua API Key abbia i permessi per 'Places API' abilitati nella console Google Cloud.")
+            
+        # Forza il refresh per mostrare la tabella sotto
         st.rerun()
 
 # --- VISUALIZZAZIONE TABELLA (SEMPRE VISIBILE SE RISULTATI > 0) ---
