@@ -148,7 +148,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
         if count_aziende >= max_results:
             break
             
-        # --- BLOCCO CORRETTO PER GESTIRE L'ERRORE ---
         try:
             response = gmaps.places_nearby(
                 location=(lat, lon),
@@ -156,14 +155,10 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 keyword=kw
             )
         except Exception as e:
-            # USIAMO st.stop() PER BLOCCARE TUTTO E LEGGERE L'ERRORE
             st.error(f"❌ ERRORE CRITICO GOOGLE: {e}")
-            st.info("L'esecuzione è stata bloccata per permetterti di leggere l'errore sopra.")
-            st.stop() # <--- Fondamentale per il debug
-        # --------------------------------------------
+            st.stop() 
 
         while True:
-            # Ora 'response' esiste sicuramente se siamo qui
             results = response.get('results', [])
             
             for place in results:
@@ -171,14 +166,29 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                     break
                 
                 try:
+                    # Inseriti business_status e types nei fields
                     details = gmaps.place(
                         place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry'],
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
                         language='it'
                     )['result']
                     
+                    # 1. Mapping dello stato
+                    status_raw = details.get('business_status', 'N.D.')
+                    status_ita = {
+                        'OPERATIONAL': 'Attiva',
+                        'CLOSED_TEMPORARILY': 'Chiusa Temporaneamente',
+                        'CLOSED_PERMANENTLY': 'Chiusa Definitivamente'
+                    }.get(status_raw, status_raw)
+
+                    # 2. Pulizia categorie (prendiamo le prime 3 per non allungare troppo la colonna)
+                    types_list = details.get('types', [])
+                    categorie = ", ".join(types_list[:3]) if types_list else "N.D."
+
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
+                        'Stato': status_ita,
+                        'Categorie': categorie, # <--- NUOVA COLONNA
                         'Sito Web': details.get('website', 'N.D.'),
                         'Indirizzo': details.get('formatted_address', 'N.D.'),
                         'lat': details['geometry']['location']['lat'],
@@ -202,7 +212,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 break
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
-
 
 
 
