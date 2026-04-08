@@ -145,73 +145,53 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     count_aziende = 0
 
     for kw in keywords_list:
-        if count_aziende >= max_results:
-            break
-            
+        if count_aziende >= max_results: break
         try:
-            response = gmaps.places_nearby(
-                location=(lat, lon),
-                radius=raggio_m,
-                keyword=kw
-            )
-        except Exception as e:
-            st.error(f"❌ ERRORE CRITICO GOOGLE: {e}")
-            st.stop() 
+            response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
+            while True:
+                results = response.get('results', [])
+                for place in results:
+                    if count_aziende >= max_results: break
+                    try:
+                        details = gmaps.place(
+                            place['place_id'], 
+                            fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
+                            language='it'
+                        )['result']
+                        
+                        # Mapping Stato
+                        s_raw = details.get('business_status', 'N.D.')
+                        s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.', 'CLOSED_PERMANENTLY': 'Chiusa Def.'}.get(s_raw, s_raw)
+                        
+                        # Mapping Categorie
+                        cat = ", ".join(details.get('types', [])[:3])
 
-        while True:
-            results = response.get('results', [])
-            
-            for place in results:
-                if count_aziende >= max_results:
-                    break
+                        ris.append({
+                            'Ragione Sociale': details.get('name', 'N.D.'),
+                            'Stato': s_ita,
+                            'Categorie': cat,
+                            'Sito Web': details.get('website', 'N.D.'),
+                            'Indirizzo': details.get('formatted_address', 'N.D.'),
+                            'Partita IVA': 'N.D.', # Prepariamo la colonna
+                            'Email': 'N.D.',       # Prepariamo la colonna
+                            'Fatturato': 'N.D.',   # Prepariamo la colonna
+                            'Dipendenti': 'N.D.',   # Prepariamo la colonna
+                            'lat': details['geometry']['location']['lat'],
+                            'lon': details['geometry']['location']['lng']
+                        })
+                        count_aziende += 1
+                    except: continue
                 
-                try:
-                    # Inseriti business_status e types nei fields
-                    details = gmaps.place(
-                        place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
-                        language='it'
-                    )['result']
-                    
-                    # 1. Mapping dello stato
-                    status_raw = details.get('business_status', 'N.D.')
-                    status_ita = {
-                        'OPERATIONAL': 'Attiva',
-                        'CLOSED_TEMPORARILY': 'Chiusa Temporaneamente',
-                        'CLOSED_PERMANENTLY': 'Chiusa Definitivamente'
-                    }.get(status_raw, status_raw)
-
-                    # 2. Pulizia categorie (prendiamo le prime 3 per non allungare troppo la colonna)
-                    types_list = details.get('types', [])
-                    categorie = ", ".join(types_list[:3]) if types_list else "N.D."
-
-                    ris.append({
-                        'Ragione Sociale': details.get('name', 'N.D.'),
-                        'Stato': status_ita,
-                        'Categorie': categorie, # <--- NUOVA COLONNA
-                        'Sito Web': details.get('website', 'N.D.'),
-                        'Indirizzo': details.get('formatted_address', 'N.D.'),
-                        'lat': details['geometry']['location']['lat'],
-                        'lon': details['geometry']['location']['lng'],
-                        'Partita IVA': 'N.D.',
-                        'Fatturato': 'N.D.',
-                        'Dipendenti': 'N.D.'
-                    })
-                    count_aziende += 1
-                except:
-                    continue
-
-            token = response.get('next_page_token')
-            if not token or count_aziende >= max_results:
-                break
-                
-            time.sleep(2)
-            try:
+                token = response.get('next_page_token')
+                if not token or count_aziende >= max_results: break
+                time.sleep(2)
                 response = gmaps.places_nearby(page_token=token)
-            except:
-                break
+        except: continue
             
-    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
+    return pd.DataFrame(ris) if ris else pd.DataFrame()
+
+
+
 
 
 
