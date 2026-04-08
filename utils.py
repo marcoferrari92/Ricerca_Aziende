@@ -132,64 +132,66 @@ def scrape_camerale_data(piva):
 
 
 @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     gmaps = googlemaps.Client(key=api_key)
-
-    try:
-        response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
-    except googlemaps.exceptions.ApiError as e:
-        # Questo mostrerà a video se manca il Billing, se l'API è spenta o la Key è errata
-        st.error(f"⚠️ Errore Google Maps: {e.status}")
-    if e.status == "REQUEST_DENIED":
-        st.write("Verifica di aver abilitato la 'Places API' e che il Billing sia attivo.")
-    return pd.DataFrame()
-
     ris = []
     raggio_m = int(raggio_km * 1000)
-    
-    count_aziende = 0 # Contatore di sicurezza
+    count_aziende = 0
 
     for kw in keywords_list:
         if count_aziende >= max_results:
             break
             
-        response = gmaps.places_nearby(
-            location=(lat, lon),
-            radius=raggio_m,
-            keyword=kw
-        )
-        
+        # --- BLOCCO CORRETTO PER GESTIRE L'ERRORE ---
+        try:
+            response = gmaps.places_nearby(
+                location=(lat, lon),
+                radius=raggio_m,
+                keyword=kw
+            )
+        except Exception as e:
+            st.error(f"⚠️ Errore con la keyword '{kw}': {e}")
+            continue # Salta questa keyword e passa alla prossima invece di crashare
+        # --------------------------------------------
+
         while True:
-            for place in response.get('results', []):
-                # Se abbiamo raggiunto il limite, smettiamo di chiedere i Details (che costano)
+            # Ora 'response' esiste sicuramente se siamo qui
+            results = response.get('results', [])
+            
+            for place in results:
                 if count_aziende >= max_results:
                     break
                 
-                # Chiamata Details (Questa è quella che incide sul budget)
-                details = gmaps.place(
-                    place['place_id'], 
-                    fields=['name', 'formatted_address', 'website', 'geometry'],
-                    language='it'
-                )['result']
-                
-                ris.append({
-                    'Ragione Sociale': details.get('name', 'N.D.'),
-                    'Sito Web': details.get('website', 'N.D.'),
-                    'Indirizzo': details.get('formatted_address', 'N.D.'),
-                    'lat': details['geometry']['location']['lat'],
-                    'lon': details['geometry']['location']['lng'],
-                    'Partita IVA': 'N.D.',
-                    'Fatturato': 'N.D.'
-                })
-                
-                count_aziende += 1
+                try:
+                    details = gmaps.place(
+                        place['place_id'], 
+                        fields=['name', 'formatted_address', 'website', 'geometry'],
+                        language='it'
+                    )['result']
+                    
+                    ris.append({
+                        'Ragione Sociale': details.get('name', 'N.D.'),
+                        'Sito Web': details.get('website', 'N.D.'),
+                        'Indirizzo': details.get('formatted_address', 'N.D.'),
+                        'lat': details['geometry']['location']['lat'],
+                        'lon': details['geometry']['location']['lng'],
+                        'Partita IVA': 'N.D.',
+                        'Fatturato': 'N.D.',
+                        'Dipendenti': 'N.D.'
+                    })
+                    count_aziende += 1
+                except:
+                    continue
 
-            # Controllo paginazione + controllo limite
             token = response.get('next_page_token')
             if not token or count_aziende >= max_results:
                 break
                 
-            time.sleep(2) 
-            response = gmaps.places_nearby(page_token=token)
+            time.sleep(2)
+            try:
+                response = gmaps.places_nearby(page_token=token)
+            except:
+                break
             
-    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale'])
+    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
