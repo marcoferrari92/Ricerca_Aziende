@@ -206,56 +206,49 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 
-def scrape_camerale_data(piva):
-    if not piva or len(piva) != 11:
-        return "N.D.", "N.D.", "P.IVA non valida"
-    
-    # Elenco di User-Agent per non sembrare sempre lo stesso PC
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1'
-    ]
+from openai import OpenAI
+import json
 
-    # Proviamo a usare DuckDuckGo se Google ci blocca
-    url = f"https://html.duckduckgo.com/html/?q=site:reportaziende.it+{piva}"
-    
-    headers = {
-        'User-Agent': random.choice(user_agents),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'it-IT,it;q=0.9',
-        'DNT': '1'
-    }
+def chiedi_a_openai(nome_azienda, piva, sito, api_key_openai):
+    """
+    Usa OpenAI per incrociare i dati e trovare bilancio e dipendenti.
+    """
+    if not api_key_openai:
+        return "Manca API Key", "N.D.", "Configura la chiave OpenAI"
 
-    # Pausa più lunga: se Google/DDG vede troppe richieste in un secondo, ti banna l'IP
-    time.sleep(random.uniform(3.0, 6.0))
+    client = OpenAI(api_key=api_key_openai)
+    
+    # Prompt ottimizzato per estrazione dati business
+    prompt = f"""
+    Sei un analista finanziario esperto. 
+    Trova il fatturato più recente (anno 2023 o 2024) e il numero di dipendenti per:
+    Ragione Sociale: {nome_azienda}
+    Partita IVA: {piva}
+    Sito Web: {sito}
+
+    Rispondi ESCLUSIVAMENTE con un oggetto JSON con queste chiavi:
+    "fatturato": (stringa con valore e valuta, es: "1.5 Mln €"),
+    "dipendenti": (stringa con il numero o range, es: "10-20"),
+    "fonte": (breve descrizione della fonte trovata)
+
+    Se i dati non sono disponibili, scrivi "N.D.".
+    """
 
     try:
-        res = requests.get(url, headers=headers, timeout=15)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # Modello veloce ed economico, ottimo per questo compito
+            messages=[{"role": "user", "content": prompt}],
+            response_format={ "type": "json_object" } # Forza OpenAI a rispondere in JSON
+        )
         
-        if res.status_code == 403 or res.status_code == 429:
-            return "Sito Bloccato", "N.D.", "Il server di ricerca ha rilevato lo scraping (403/429)."
-
-        soup = BeautifulSoup(res.text, 'html.parser')
-        testo_visibile = soup.get_text(separator=' ', strip=True)
-
-        fatturato = "N.D."
-        dipendenti = "N.D."
-
-        # Regex per Fatturato
-        fatt_match = re.search(r'fatturato.*?([\d\.,]+)', testo_visibile, re.IGNORECASE)
-        if fatt_match:
-            valore = fatt_match.group(1).strip('., ')
-            if len(valore.replace('.', '')) > 4:
-                fatturato = valore + " €"
-
-        # Regex per Dipendenti
-        dip_match = re.search(r'(?:dipendenti|addetti).*?(\d+)', testo_visibile, re.IGNORECASE)
-        if dip_match:
-            dipendenti = dip_match.group(1)
-
-        return fatturato, dipendenti, testo_visibile[:1500]
+        # Parsing della risposta
+        risposta_json = json.loads(response.choices[0].message.content)
+        
+        fatturato = risposta_json.get("fatturato", "N.D.")
+        dipendenti = risposta_json.get("dipendenti", "N.D.")
+        fonte = risposta_json.get("fonte", "N.D.")
+        
+        return fatturato, dipendenti, f"Dati AI: {fonte}"
 
     except Exception as e:
-        return "Errore", "N.D.", str(e)
+        return "Errore AI", "N.D.", str(e)
