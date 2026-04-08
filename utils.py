@@ -7,7 +7,6 @@ import googlemaps
 from bs4 import BeautifulSoup
 import urllib3
 
-# Disabilita avvisi per siti senza certificato SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def is_valid_piva(piva):
@@ -32,8 +31,6 @@ def scrape_sito_aziendale(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy"]
     piva_f, email_f = "Non trovata", "Non trovata"
-    
-    # Pattern P.IVA: 11 cifre precedute da prefissi comuni
     piva_pattern = r'(?:IT|P\.IVA|P\.I\.)?\s?(\d{11})'
 
     for sfx in suffixes:
@@ -43,7 +40,6 @@ def scrape_sito_aziendale(url):
             soup = BeautifulSoup(res.text, 'html.parser')
             testo = soup.get_text(separator=' ')
             
-            # Ricerca P.IVA
             if piva_f == "Non trovata":
                 matches = re.findall(piva_pattern, testo)
                 for m in matches:
@@ -51,7 +47,6 @@ def scrape_sito_aziendale(url):
                         piva_f = m
                         break
             
-            # Ricerca Email
             if email_f == "Non trovata":
                 em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
                 if em_match:
@@ -61,12 +56,18 @@ def scrape_sito_aziendale(url):
         except: continue
     return piva_f, email_f
 
+def scrape_camerale_data(piva):
+    """Placeholder per dati fatturato/dipendenti."""
+    # Nota: L'estrazione di questi dati richiede API specifiche (es. Atoka, OpenCorporates) 
+    # o scraping complesso di siti di business directory.
+    return "N.D. (Richiede API)", "N.D."
+
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
-    """Ottiene aziende da Google Places e prepara la struttura dati."""
     try:
         gmaps = googlemaps.Client(key=api_key)
-    except:
+    except Exception as e:
+        st.error(f"Errore connessione Google: {e}")
         return pd.DataFrame()
 
     ris = []
@@ -84,42 +85,38 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 for place in results:
                     if count >= max_results: break
                     
-                    # Dettagli singoli per ogni azienda
+                    # Dettagli singoli
                     details = gmaps.place(
                         place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
                         language='it'
-                    )['result']
+                    ).get('result', {})
                     
-                    # Traduzione Stato
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
                     
-                    # Creazione record con TUTTE le colonne subito
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
                         'Stato': s_ita,
-                        'Categorie': ", ".join(details.get('types', [])[:2]),
                         'Sito Web': details.get('website', 'N.D.'),
                         'Indirizzo': details.get('formatted_address', 'N.D.'),
                         'Partita IVA': 'N.D.',
                         'Email': 'N.D.',
                         'Fatturato': 'N.D.',
                         'Dipendenti': 'N.D.',
-                        'lat': details['geometry']['location']['lat'],
-                        'lon': details['geometry']['location']['lng']
+                        'lat': details.get('geometry', {}).get('location', {}).get('lat'),
+                        'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
                     count += 1
                 
-                # Gestione paginazione Google (max 60 risultati per keyword)
                 token = response.get('next_page_token')
                 if not token or count >= max_results: break
-                time.sleep(2)
+                time.sleep(2) 
                 response = gmaps.places_nearby(page_token=token)
-        except: continue
+        except Exception as e:
+            continue
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
-
 
 
 
