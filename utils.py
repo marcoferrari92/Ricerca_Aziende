@@ -204,40 +204,89 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 
+import requests
+import re
+import time
+import random
+from bs4 import BeautifulSoup
+
 def scrape_camerale_data(piva):
-    """Recupera dati di bilancio e restituisce il testo grezzo per il debug."""
+    """
+    Versione 2026 Anti-Blocco: 
+    Usa sessioni, ritardi casuali e fallback su Google.
+    """
     if not piva or len(piva) != 11:
         return "N.D.", "N.D.", "P.IVA non valida"
     
-    url = f"https://www.reportaziende.it/ricerca?q={piva}"
+    # --- CONFIGURAZIONE ---
+    # Sito primario e ricerca Google come fallback
+    url_primario = f"https://www.reportaziende.it/ricerca?q={piva}"
+    url_google = f"https://www.google.com/search?q=site:reportaziende.it+{piva}"
+    
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8',
+        'Referer': 'https://www.google.it/',
+        'DNT': '1'
     }
 
+    # 1. Piccola attesa casuale per non sembrare un bot martellante
+    time.sleep(random.uniform(2.0, 4.0))
+
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Estraiamo tutto il testo visibile per capire cosa vede lo script
-        testo_grezzo = soup.get_text(separator=' ', strip=True)
-        
-        # Logica di estrazione (Regex)
-        fatturato = "N.D."
-        dipendenti = "N.D."
-        
-        fatt_match = re.search(r'Fatturato.*?([\d\.]+)', testo_grezzo, re.IGNORECASE)
-        if fatt_match:
-            fatturato = fatt_match.group(1) + " €"
+        # Usiamo una Session per gestire eventuali cookie/redirect
+        with requests.Session() as session:
+            session.headers.update(headers)
             
-        dip_match = re.search(r'Dipendenti.*?(\d+)', testo_grezzo, re.IGNORECASE)
-        if dip_match:
-            dipendenti = dip_match.group(1)
+            # TENTATIVO A: Accesso diretto
+            res = session.get(url_primario, timeout=12)
+            
+            # Se riceviamo 404 o veniamo bloccati, proviamo il TENTATIVO B via Google
+            if res.status_code != 200 or "Errore 404" in res.text:
+                time.sleep(1) # Breve pausa
+                res = session.get(url_google, timeout=12)
+                testo_grezzo = f"[GOOGLE FALLBACK] " + res.text[:2000]
+            else:
+                testo_grezzo = res.text[:2000]
 
-        # Se il server dà errore (es. 404), lo scriviamo nel testo grezzo
-        if res.status_code != 200:
-            testo_grezzo = f"ERRORE SERVER {res.status_code}: La pagina non esiste o il bot è stato bloccato."
+            soup = BeautifulSoup(res.text, 'html.parser')
+            testo_visibile = soup.get_text(separator=' ', strip=True)
 
-        return fatturato, dipendenti, testo_grezzo
+            # --- LOGICA DI ESTRAZIONE MIGLIORATA ---
+            fatturato = "N.D."
+            dipendenti = "N.D."
+
+            # Regex più tollerante per i vari formati (es: 1.234.000, 1,2 MLN, etc.)
+            # Cerca "Fatturato" seguito da simboli o numeri entro 30 caratteri
+            fatt_match = re.search(r'Fatturato[:\s]*[€]?\s?([\d\.]+)', testo_visibile, re.IGNORECASE)
+            if fatt_match:
+                # Pulizia per evitare di prendere solo un punto
+                valore = fatt_match.group(1).strip('.')
+                if len(valore) > 3: # Un fatturato credibile ha almeno 4 cifre
+                    fatturato = valore + " €"
+
+            # Regex per Dipendenti
+            dip_match = re.search(r'(?:Dipendenti|Addetti)[:\s]*(\d+)', testo_visibile, re.IGNORECASE)
+            if dip_match:
+                dipendenti = dip_match.group(1)
+
+            # Se siamo su una pagina di Google, il testo è nello snippet
+            if fatturato == "N.D." and "Fatturato" in testo_visibile:
+                 # Tentativo disperato: cerca la prima cifra lunga dopo la parola chiave
+                 parts = re.split(r'Fatturato', testo_visibile, flags=re.IGNORECASE)
+                 if len(parts) > 1:
+                     numbers = re.findall(r'[\d\.]+', parts[1])
+                     for n in numbers:
+                         if len(n.replace('.', '')) > 4:
+                             fatturato = n + " €"
+                             break
+
+            # Debug finale per l'interfaccia
+            info_debug = f"Status: {res.status_code} | Fonte: {'Google' if 'google' in res.url else 'Diretta'}\n\n"
+            info_debug += testo_visibile[:1500]
+
+            return fatturato, dipendenti, info_debug
 
     except Exception as e:
-        return "Errore", "N.D.", f"Eccezione: {str(e)}"
+        return "Errore", "N.D.", f"Eccezione tecnica: {str(e)}"
