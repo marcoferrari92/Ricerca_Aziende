@@ -72,28 +72,66 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
 
 
 def scrape_sito_aziendale(url):
-    """Fase 1: Estrae P.IVA ed Email dal sito ufficiale dell'azienda."""
+    """
+    Estrae P.IVA ed Email. 
+    Se non trova nulla in Home, esplora le sottopagine comuni.
+    """
     if not url or url == 'N.D.':
         return "N.D.", "N.D."
+    
     if not url.startswith('http'):
         url = 'http://' + url
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=8)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        testo = soup.get_text()
 
-        # Regex per Partita IVA (11 cifre)
-        piva_match = re.search(r'\b\d{11}\b', testo)
-        piva = piva_match.group(0) if piva_match else "Non trovata"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
 
-        # Regex per Email
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-        email = email_match.group(0) if email_match else "Non trovata"
+    # Sottopagine probabili dove trovare dati legali
+    suffixes = ["", "/contatti", "/contacts", "/chi-siamo", "/about", "/privacy-policy"]
+    
+    piva_final = "Non trovata"
+    email_final = "Non trovata"
 
-        return piva, email
-    except:
-        return "Errore Sito", "N.D."
+    # Regex potenziata: gestisce prefissi, spazi e punti
+    piva_pattern = r'(?:IT)?\s?(\d{3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{2})'
+
+    for suffix in suffixes:
+        try:
+            full_url = url.rstrip('/') + suffix
+            response = requests.get(full_url, headers=headers, timeout=5) # Timeout breve per non rallentare troppo
+            
+            if response.status_code != 200:
+                continue
+                
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Pulizia testo: rimuoviamo script e stili che possono sporcare le regex
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            testo = " ".join(soup.get_text().split())
+
+            # Cerca P.IVA se non ancora trovata
+            if piva_final == "Non trovata":
+                piva_match = re.search(piva_pattern, testo)
+                if piva_match:
+                    piva_pulita = "".join(filter(str.isdigit, piva_match.group(1)))
+                    if len(piva_pulita) == 11:
+                        piva_final = piva_pulita
+
+            # Cerca Email se non ancora trovata
+            if email_final == "Non trovata":
+                email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+                if email_match:
+                    email_final = email_match.group(0)
+
+            # Se abbiamo trovato entrambi, usciamo dal ciclo delle sottopagine
+            if piva_final != "Non trovata" and email_final != "Non trovata":
+                break
+                
+        except:
+            continue
+
+    return piva_final, email_final
 
 
 
