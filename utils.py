@@ -1,93 +1,126 @@
 import streamlit as st
+import requests
+import re
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
-from mapping import ATECO_MAP
-from utils import fetch_data_google, scrape_sito_aziendale
+import time
+import googlemaps
+from bs4 import BeautifulSoup
+import urllib3
 
-# --- CONFIGURAZIONE ---
-st.set_page_config(layout="wide", page_title="Business Extractor")
+# Disabilita avvisi per siti senza certificato SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-if 'pos' not in st.session_state:
-    st.session_state.pos = {'lat': 45.437, 'lon': 12.332} # Default: Venezia
-if 'results' not in st.session_state:
-    st.session_state.results = pd.DataFrame()
+def is_valid_piva(piva):
+    """Algoritmo di Luhn per validare la P.IVA."""
+    if not piva or len(piva) != 11 or not piva.isdigit():
+        return False
+    s = 0
+    for i in range(11):
+        n = int(piva[i])
+        if i % 2 == 1:
+            n *= 2
+            if n > 9: n -= 9
+        s += n
+    return s % 10 == 0
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🔑 API Settings")
-    api_key = st.text_input("Google API Key", type="password")
+def scrape_sito_aziendale(url):
+    """Cerca P.IVA ed Email navigando le pagine comuni del sito."""
+    if not url or url == 'N.D.':
+        return "N.D.", "N.D."
+    if not url.startswith('http'): url = 'http://' + url
     
-    st.header("⚙️ Parametri")
-    raggio = st.slider("Raggio (KM)", 1, 20, 5)
-    scelte = st.multiselect("Settori ATECO", list(ATECO_MAP.keys()))
-    limite = st.slider("Max Risultati", 10, 100, 20)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy"]
+    piva_f, email_f = "Non trovata", "Non trovata"
     
-    if st.button("🗑️ Svuota Tutto"):
-        st.session_state.results = pd.DataFrame()
-        st.rerun()
+    # Pattern P.IVA: 11 cifre precedute da prefissi comuni
+    piva_pattern = r'(?:IT|P\.IVA|P\.I\.)?\s?(\d{11})'
 
-# --- MAPPA INTERATTIVA ---
-st.title("🏭 Lead Generation Tool")
-st.subheader("1. Seleziona l'area sulla mappa")
-
-m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
-folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="red", fill=True, opacity=0.1).add_to(m)
-
-if not st.session_state.results.empty:
-    for _, row in st.session_state.results.iterrows():
-        folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
-
-map_data = st_folium(m, width="100%", height=400, key="map_lead")
-
-if map_data and map_data['last_clicked']:
-    st.session_state.pos = {'lat': map_data['last_clicked']['lat'], 'lon': map_data['last_clicked']['lng']}
-    st.rerun()
-
-# --- RICERCA ---
-if st.button("🚀 AVVIA RICERCA GOOGLE MAPS", use_container_width=True, type="primary"):
-    if not api_key:
-        st.error("Inserisci la chiave!")
-    elif not scelte:
-        st.warning("Scegli un settore!")
-    else:
-        kws = []
-        for s in scelte: kws.extend(ATECO_MAP.get(s, [s]))
-        
-        with st.status("Ricerca in corso...", expanded=True) as status:
-            df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, kws, api_key, limite)
-            st.session_state.results = df
-            status.update(label="Fatto!", state="complete")
-        st.rerun()
-
-# --- VISUALIZZAZIONE TABELLA (SEMPRE VISIBILE SE RISULTATI > 0) ---
-if not st.session_state.results.empty:
-    st.divider()
-    st.subheader("2. Aziende Trovate")
-    
-    # La tabella viene mostrata indipendentemente dai pulsanti
-    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), use_container_width=True)
-
-    st.subheader("3. Arricchimento (Web Scraping)")
-    if st.button("🔍 ESTRAI P.IVA E EMAIL DAI SITI", use_container_width=True):
-        df_work = st.session_state.results.copy()
-        msg = st.empty()
-        bar = st.progress(0)
-        
-        for i, (idx, row) in enumerate(df_work.iterrows()):
-            msg.text(f"Analisi: {row['Ragione Sociale']}...")
-            piva, email = scrape_sito_aziendale(row['Sito Web'])
-            df_work.at[idx, 'Partita IVA'] = piva
-            df_work.at[idx, 'Email'] = email
-            bar.progress((i + 1) / len(df_work))
+    for sfx in suffixes:
+        try:
+            res = requests.get(url.rstrip('/') + sfx, headers=headers, timeout=5, verify=False)
+            if res.status_code != 200: continue
+            soup = BeautifulSoup(res.text, 'html.parser')
+            testo = soup.get_text(separator=' ')
             
-        st.session_state.results = df_work
-        msg.success("Dati aggiornati!")
-        st.rerun()
+            # Ricerca P.IVA
+            if piva_f == "Non trovata":
+                matches = re.findall(piva_pattern, testo)
+                for m in matches:
+                    if is_valid_piva(m):
+                        piva_f = m
+                        break
+            
+            # Ricerca Email
+            if email_f == "Non trovata":
+                em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+                if em_match:
+                    email_f = em_match.group(0).lower()
 
-    # DOWNLOAD CSV
-    csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica Database CSV", csv, "export_aziende.csv", "text/csv", use_container_width=True)
+            if piva_f != "Non trovata" and email_f != "Non trovata": break
+        except: continue
+    return piva_f, email_f
+
+@st.cache_data(show_spinner=False)
+def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
+    """Ottiene aziende da Google Places e prepara la struttura dati."""
+    try:
+        gmaps = googlemaps.Client(key=api_key)
+    except:
+        return pd.DataFrame()
+
+    ris = []
+    raggio_m = int(raggio_km * 1000)
+    count = 0
+
+    for kw in keywords_list:
+        if count >= max_results: break
+        try:
+            # Ricerca iniziale
+            response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
+            
+            while True:
+                results = response.get('results', [])
+                for place in results:
+                    if count >= max_results: break
+                    
+                    # Dettagli singoli per ogni azienda
+                    details = gmaps.place(
+                        place['place_id'], 
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
+                        language='it'
+                    )['result']
+                    
+                    # Traduzione Stato
+                    s_raw = details.get('business_status', 'N.D.')
+                    s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
+                    
+                    # Creazione record con TUTTE le colonne subito
+                    ris.append({
+                        'Ragione Sociale': details.get('name', 'N.D.'),
+                        'Stato': s_ita,
+                        'Categorie': ", ".join(details.get('types', [])[:2]),
+                        'Sito Web': details.get('website', 'N.D.'),
+                        'Indirizzo': details.get('formatted_address', 'N.D.'),
+                        'Partita IVA': 'N.D.',
+                        'Email': 'N.D.',
+                        'Fatturato': 'N.D.',
+                        'Dipendenti': 'N.D.',
+                        'lat': details['geometry']['location']['lat'],
+                        'lon': details['geometry']['location']['lng']
+                    })
+                    count += 1
+                
+                # Gestione paginazione Google (max 60 risultati per keyword)
+                token = response.get('next_page_token')
+                if not token or count >= max_results: break
+                time.sleep(2)
+                response = gmaps.places_nearby(page_token=token)
+        except: continue
+            
+    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
+
+
 
 
 
