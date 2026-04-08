@@ -207,61 +207,55 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 def scrape_camerale_data(piva):
-    """
-    Strategia Fallback: Se il sito diretto dà 404, interroga Google.
-    Spesso il dato è già nello 'snippet' di ricerca.
-    """
     if not piva or len(piva) != 11:
         return "N.D.", "N.D.", "P.IVA non valida"
     
-    # User-Agent più moderno per sembrare un browser reale
+    # Elenco di User-Agent per non sembrare sempre lo stesso PC
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1'
+    ]
+
+    # Proviamo a usare DuckDuckGo se Google ci blocca
+    url = f"https://html.duckduckgo.com/html/?q=site:reportaziende.it+{piva}"
+    
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8',
-        'Referer': 'https://www.google.it/'
+        'User-Agent': random.choice(user_agents),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.9',
+        'DNT': '1'
     }
 
-    # Tentiamo la ricerca tramite Google per bypassare il blocco diretto
-    # Cerchiamo la P.IVA specificamente su reportaziende o ufficiovisto
-    search_url = f"https://www.google.com/search?q=site:reportaziende.it+{piva}"
-    
-    # Attesa casuale anti-ban (fondamentale)
-    time.sleep(random.uniform(2.5, 4.5))
+    # Pausa più lunga: se Google/DDG vede troppe richieste in un secondo, ti banna l'IP
+    time.sleep(random.uniform(3.0, 6.0))
 
     try:
-        res = requests.get(search_url, headers=headers, timeout=12)
+        res = requests.get(url, headers=headers, timeout=15)
         
-        if res.status_code != 200:
-            return f"Errore Google {res.status_code}", "N.D.", "Google ha bloccato la richiesta."
+        if res.status_code == 403 or res.status_code == 429:
+            return "Sito Bloccato", "N.D.", "Il server di ricerca ha rilevato lo scraping (403/429)."
 
         soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Rimuoviamo la spazzatura di Google (script, stili, etc.)
-        for tag in soup(["script", "style", "header", "footer"]):
-            tag.decompose()
-            
-        testo_google = soup.get_text(separator=' ', strip=True)
+        testo_visibile = soup.get_text(separator=' ', strip=True)
 
         fatturato = "N.D."
         dipendenti = "N.D."
 
-        # Cerchiamo il fatturato nello snippet di Google
-        # Pattern: cerca la parola fatturato e poi una cifra con punti/virgole
-        fatt_match = re.search(r'fatturato.*?([\d\.,]+)\s?(?:Euro|€|milioni)?', testo_google, re.IGNORECASE)
+        # Regex per Fatturato
+        fatt_match = re.search(r'fatturato.*?([\d\.,]+)', testo_visibile, re.IGNORECASE)
         if fatt_match:
             valore = fatt_match.group(1).strip('., ')
-            if len(valore.replace('.', '')) > 4: # Evitiamo numeri troppo corti (civici, date)
+            if len(valore.replace('.', '')) > 4:
                 fatturato = valore + " €"
 
-        # Cerchiamo i dipendenti
-        dip_match = re.search(r'(?:dipendenti|addetti).*?(\d+)', testo_google, re.IGNORECASE)
+        # Regex per Dipendenti
+        dip_match = re.search(r'(?:dipendenti|addetti).*?(\d+)', testo_visibile, re.IGNORECASE)
         if dip_match:
             dipendenti = dip_match.group(1)
 
-        # Se non troviamo nulla, mostriamo il testo per debug
-        info_debug = f"Fonte: Google Snippet\n\n{testo_google[:1500]}"
-        
-        return fatturato, dipendenti, info_debug
+        return fatturato, dipendenti, testo_visibile[:1500]
 
     except Exception as e:
-        return "Errore tecnico", "N.D.", str(e)
+        return "Errore", "N.D.", str(e)
