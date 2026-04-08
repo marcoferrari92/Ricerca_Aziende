@@ -71,80 +71,70 @@ def fetch_data(lat, lon, raggio_km, macrosettori):
         return pd.DataFrame()
 
 
+def is_valid_piva(piva):
+    """Valida la Partita IVA italiana usando l'algoritmo di Luhn."""
+    if not piva or len(piva) != 11 or not piva.isdigit():
+        return False
+    s = 0
+    for i in range(11):
+        n = int(piva[i])
+        if i % 2 == 1:
+            n *= 2
+            if n > 9: n -= 9
+        s += n
+    return s % 10 == 0
+
 def scrape_sito_aziendale(url):
-    """
-    Estrae P.IVA ed Email esplorando Home e sottopagine.
-    Ottimizzato per siti industriali (settore C.25).
-    """
     if not url or url == 'N.D.':
         return "N.D.", "N.D."
-    
-    if not url.startswith('http'):
-        url = 'http://' + url
+    if not url.startswith('http'): url = 'http://' + url
 
-    # Headers potenziati per evitare blocchi "Bot Detection"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': 'https://www.google.com/'
     }
 
-    # Ordine di ricerca logico per aziende italiane
-    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy", "/legal-notices"]
+    suffixes = ["", "/contatti", "/contacts","/about", "/chi-siamo", "/privacy-policy"]
+    piva_final, email_final = "Non trovata", "Non trovata"
     
-    piva_final = "Non trovata"
-    email_final = "Non trovata"
-
-    # REGEX UNIVERSALE: 
-    # Cerca stringhe che somigliano a una P.IVA precedute da etichette comuni
-    # Gestisce: P.I. 00262380249, Partita IVA: 00262380249, IT00262380249, ecc.
-    piva_pattern = r'(?:IT|P\.IVA|P\.I\.|C\.F\.|IVA)?\s?(\d{2,3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{2})'
+    # Regex ultra-flessibile: prende gruppi di numeri separati da quasi tutto
+    piva_pattern = r'(?:IT|P\.?IVA|P\.?I\.?|C\.?F\.?|IVA)?\s?(\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d)'
 
     for suffix in suffixes:
         try:
-            full_url = url.rstrip('/') + suffix
-            response = requests.get(full_url, headers=headers, timeout=8, verify=False)
+            res = requests.get(url.rstrip('/') + suffix, headers=headers, timeout=7, verify=False)
+            if res.status_code != 200: continue
             
-            if response.status_code != 200:
-                continue
-                
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(res.text, 'html.parser')
+            for tag in soup(["script", "style", "nav", "header"]): tag.decompose()
             
-            # Pulizia profonda: togliamo navigazione e codici che creano falsi positivi
-            for element in soup(["script", "style", "nav", "header", "footer_links"]):
-                element.decompose()
+            # Cerchiamo sia nel testo che negli attributi (a volte è nei link)
+            testo = soup.get_text(separator=' ')
             
-            # Prendiamo il testo pulito
-            testo = " ".join(soup.get_text().split())
-
-            # 1. Ricerca P.IVA
+            # 1. Ricerca P.IVA con Validazione
             if piva_final == "Non trovata":
                 matches = re.findall(piva_pattern, testo)
                 for m in matches:
-                    # Rimuoviamo ogni carattere non numerico per il controllo finale
                     cifre = "".join(filter(str.isdigit, m))
-                    if len(cifre) == 11:
+                    if len(cifre) == 11 and is_valid_piva(cifre):
                         piva_final = cifre
-                        break # Trovata, usciamo dal loop dei match
-
-            # 2. Ricerca Email
+                        break
+            
+            # 2. Ricerca Email (escludendo falsi positivi comuni)
             if email_final == "Non trovata":
-                email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
-                if email_match:
-                    # Evitiamo di prendere email di webmaster o grafici se possibile
-                    temp_email = email_match.group(0).lower()
-                    if "webmaster" not in temp_email and "pixel" not in temp_email:
-                        email_final = temp_email
+                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo)
+                for em in emails:
+                    em_low = em.lower()
+                    if not any(x in em_low for x in ["example", "email", "webmaster", "pec"]):
+                        email_final = em_low
+                        break
 
-            # Se abbiamo trovato entrambi i dati core, interrompiamo la scansione delle sottopagine
-            if piva_final != "Non trovata" and email_final != "Non trovata":
-                break
-                
-        except Exception:
-            continue
+            if piva_final != "Non trovata" and email_final != "Non trovata": break
+        except: continue
 
     return piva_final, email_final
+
+
 
 
 
