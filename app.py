@@ -15,9 +15,6 @@ from utils import fetch_data_google, scrape_sito_aziendale, scrape_camerale_data
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor Pro")
 
-# --- GESTIONE CHIAVE API ---
-API_KEY = st.secrets.get("MAPS_API_KEY", "")
-
 # --- GESTIONE STATO ---
 if 'pos' not in st.session_state:
     st.session_state.pos = {'lat': 45.547, 'lon': 11.545}
@@ -26,18 +23,19 @@ if 'results' not in st.session_state:
 
 # --- INTERFACCIA UTENTE ---
 st.title("🏭 Business Data Extractor (Google Edition)")
-st.markdown("Ottieni dati aziendali ad alta precisione tramite **Google Places** + **Web Scraping**.")
+st.markdown("Ottieni dati aziendali tramite **Google Places** + **Web Scraping**.")
 
 with st.sidebar:
-    st.header("⚙️ Configurazione")
-    if not API_KEY:
-        st.error("⚠️ Google API Key non trovata nei Secrets!")
+    st.header("🔑 Autenticazione")
+    # Campo per inserire la chiave manualmente
+    user_api_key = st.text_input("Inserisci la tua Google API Key", type="password", help="La chiave non viene salvata sul server.")
     
-    raggio = st.slider("Raggio Scansione (KM)", 1, 20, 5)
-    # L'utente seleziona i codici (es. C.25) definiti nel tuo mapping.py
-    scelte = st.multiselect("Settori Aziendali (Codici ATECO)", list(ATECO_MAP.keys()))
+    if not user_api_key:
+        st.warning("⚠️ Inserisci la API Key per attivare le funzioni di ricerca.")
 
-    # Nel file app.py, dentro with st.sidebar:
+    st.header("⚙️ Configurazione")
+    raggio = st.slider("Raggio Scansione (KM)", 1, 20, 5)
+    scelte = st.multiselect("Settori Aziendali (Codici ATECO)", list(ATECO_MAP.keys()))
     max_test = st.slider("Limite Aziende (Safety Block)", 5, 200, 20) 
 
     st.divider()
@@ -69,31 +67,29 @@ if map_res and map_res['last_clicked']:
 
 # --- BOTTONE DI RICERCA GOOGLE ---
 if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", use_container_width=True, type="primary"):
-    if not API_KEY:
-        st.error("Inserisci la API Key nei Secrets per procedere.")
+    if not user_api_key:
+        st.error("❌ Errore: Devi inserire una API Key valida nella barra laterale!")
     elif not scelte:
         st.warning("Seleziona almeno un settore (es. C.25) dalla barra laterale!")
     else:
-        # --- LOGICA DI ESPANSIONE KEYWORD ---
         keywords_finali = []
         for s in scelte:
-            # Recupera la lista di parole chiave dal mapping per quel codice
             keywords_finali.extend(ATECO_MAP.get(s, [s]))
         
         with st.status(f"Ricerca in corso per {len(keywords_finali)} categorie...", expanded=True) as status:
-            st.write("Interrogando Google Places (questo potrebbe richiedere tempo per gestire la paginazione)...")
+            st.write("Connessione a Google Places...")
             
-            # Chiamata alla funzione in utils.py che ora riceve la lista espansa
+            # Passiamo la chiave inserita dall'utente (user_api_key)
             df = fetch_data_google(
                 st.session_state.pos['lat'], 
                 st.session_state.pos['lon'], 
                 raggio, 
                 keywords_finali, 
-                API_KEY,
+                user_api_key, # <--- Chiave dinamica
                 max_results=max_test
             )
             
-            st.write(f"Trovate {len(df)} aziende uniche. Elaborazione completata.")
+            st.write(f"Trovate {len(df)} aziende. Elaborazione completata.")
             st.session_state.results = df
             status.update(label="Scansione Completata!", state="complete", expanded=False)
         st.rerun()
@@ -103,12 +99,10 @@ if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Database Aziende Trovate")
     
-    # Visualizzazione pulita
     view_df = st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore')
     st.dataframe(view_df, use_container_width=True)
 
     st.subheader("3. Arricchimento Profondo (Email + P.IVA + Bilancio)")
-    st.info("Questa fase esegue lo scraping dei siti web e la ricerca camerali.")
     
     if st.button("🔍 ESTRAI DATI COMPLETI", use_container_width=True):
         df_work = st.session_state.results.copy()
@@ -120,13 +114,11 @@ if not st.session_state.results.empty:
             if row['Sito Web'] and row['Sito Web'] != 'N.D.':
                 status_msg.text(f"Analisi ({i+1}/{count}): {row['Ragione Sociale']}...")
                 
-                # Step 1: Web Scraping (P.IVA e Email)
                 piva, email_web = scrape_sito_aziendale(row['Sito Web'])
                 df_work.at[idx, 'Partita IVA'] = piva
                 if row.get('Email') == 'N.D.':
                     df_work.at[idx, 'Email'] = email_web
                 
-                # Step 2: Dati Camerali (Fatturato e Dipendenti)
                 piva_clean = "".join(filter(str.isdigit, str(piva)))
                 if len(piva_clean) == 11:
                     fatt, dip = scrape_camerale_data(piva_clean)
@@ -139,6 +131,5 @@ if not st.session_state.results.empty:
         status_msg.success("✅ Arricchimento completato!")
         st.rerun()
 
-    # Download
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
     st.download_button("📥 Scarica Database Finale (CSV)", csv, "database_aziende.csv", "text/csv")
