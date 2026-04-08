@@ -8,8 +8,9 @@ import time
 # Disabilita gli avvisi per i siti senza certificato sicuro
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import delle componenti esterne
-from mapping import ATECO_MAP 
+# Import delle componenti esterne 
+# NOTA: Assicurati che fetch_data_google in utils.py restituisca 'Stato' e 'Categorie'
+from mapping import ATECO_MAP
 from utils import fetch_data_google, scrape_sito_aziendale
 
 # --- CONFIGURAZIONE PAGINA ---
@@ -22,16 +23,10 @@ if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
 # --- INTERFACCIA UTENTE ---
-st.title("🏭 Business Data Extractor (Google Edition)")
-st.markdown("Ottieni dati aziendali tramite **Google Places** + **Web Scraping**.")
+st.sidebar.header("🔑 Autenticazione")
+user_api_key = st.sidebar.text_input("Inserisci la tua Google API Key", type="password")
 
 with st.sidebar:
-    st.header("🔑 Autenticazione")
-    user_api_key = st.text_input("Inserisci la tua Google API Key", type="password", help="La chiave non viene salvata sul server.")
-    
-    if not user_api_key:
-        st.warning("⚠️ Inserisci la API Key per attivare le funzioni di ricerca.")
-
     st.header("⚙️ Configurazione")
     raggio = st.slider("Raggio Scansione (KM)", 1, 20, 5)
     scelte = st.multiselect("Settori Aziendali (Codici ATECO)", list(ATECO_MAP.keys()))
@@ -42,84 +37,62 @@ with st.sidebar:
         st.session_state.results = pd.DataFrame()
         st.rerun()
 
+st.title("🏭 Business Data Extractor")
 st.subheader("1. Area di Ricerca")
-m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
-folium.Circle(
-    location=[st.session_state.pos['lat'], st.session_state.pos['lon']], 
-    radius=raggio*1000, 
-    color="blue", 
-    fill=True, 
-    opacity=0.1
-).add_to(m)
 
+m = folium.Map(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], zoom_start=12)
+folium.Circle(location=[st.session_state.pos['lat'], st.session_state.pos['lon']], radius=raggio*1000, color="blue", fill=True, opacity=0.1).add_to(m)
+
+# Marker per i risultati esistenti
 if not st.session_state.results.empty:
     for _, row in st.session_state.results.iterrows():
         folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
 
-map_res = st_folium(m, width="stretch", height=400, key="map_bi")
+map_res = st_folium(m, width="stretch", height=400, key="map_main")
 
+# Spostamento mappa al click
 if map_res and map_res['last_clicked']:
     new_lat, new_lon = map_res['last_clicked']['lat'], map_res['last_clicked']['lng']
-    if abs(new_lat - st.session_state.pos['lat']) > 0.0001:
+    if abs(new_lat - st.session_state.pos['lat']) > 0.001:
         st.session_state.pos = {'lat': new_lat, 'lon': new_lon}
         st.rerun()
 
-# --- BOTTONE DI RICERCA GOOGLE ---
+# --- BOTTONE RICERCA GOOGLE ---
 if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", width="stretch", type="primary"):
     if not user_api_key:
-        st.error("❌ Errore: Devi inserire una API Key valida nella barra laterale!")
+        st.error("Inserisci la API Key!")
     elif not scelte:
-        st.warning("Seleziona almeno un settore (es. C.25) dalla barra laterale!")
+        st.warning("Seleziona almeno un settore!")
     else:
-        keywords_finali = []
-        for s in scelte:
-            keywords_finali.extend(ATECO_MAP.get(s, [s]))
+        keywords = []
+        for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
         
-        with st.status(f"Ricerca in corso per {len(keywords_finali)} categorie...", expanded=True) as status:
-            st.write("Connessione a Google Places...")
-            
-            df = fetch_data_google(
-                st.session_state.pos['lat'], 
-                st.session_state.pos['lon'], 
-                raggio, 
-                keywords_finali, 
-                user_api_key,
-                max_results=max_test
-            )
-            
-            if not df.empty:
-                st.write(f"Trovate {len(df)} aziende. Elaborazione completata.")
-                st.session_state.results = df
-                status.update(label="Scansione Completata!", state="complete", expanded=False)
-            else:
-                st.error("Nessun risultato trovato in quest'area.")
-                status.update(label="Nessun risultato", state="error", expanded=False)
+        with st.status("Ricerca in corso...", expanded=True) as status:
+            df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
+            st.session_state.results = df
+            status.update(label=f"Trovate {len(df)} aziende!", state="complete", expanded=False)
         st.rerun()
 
-# --- RISULTATI E ARRICCHIMENTO ---
+# --- VISUALIZZAZIONE RISULTATI ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Database Aziende Trovate")
     
-    # Visualizziamo tutto il dataframe (incluse Categorie e Stato)
-    # Rimuoviamo solo le coordinate lat/lon per pulizia visiva, ma teniamo tutto il resto
+    # Mostriamo la tabella completa subito dopo Google (Stato e Categorie incluse)
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), width="stretch")
 
-    st.subheader("3. Arricchimento Profondo (Email + P.IVA + Bilancio)")
+    st.subheader("3. Arricchimento (Email + P.IVA)")
     
-    if st.button("🔍 ESTRAI DATI COMPLETI", width='stretch'):
+    if st.button("🔍 ESTRAI EMAIL E P.IVA", width='stretch'):
         df_work = st.session_state.results.copy()
         progress_bar = st.progress(0)
         status_msg = st.empty()
-        
-        st.subheader("🕵️ Ispettore Scraper (Real-time)")
-        debug_window = st.empty() 
         
         count = len(df_work)
         for i, (idx, row) in enumerate(df_work.iterrows()):
             status_msg.info(f"⏳ Analisi {i+1}/{count}: {row['Ragione Sociale']}")
             
-            # 1. Scraping Sito (P.IVA e Email)
+            # Solo scraping web (Email e P.IVA)
             piva, email = scrape_sito_aziendale(row['Sito Web'])
             df_work.at[idx, 'Partita IVA'] = piva
             df_work.at[idx, 'Email'] = email
@@ -127,15 +100,9 @@ if not st.session_state.results.empty:
             progress_bar.progress((i + 1) / count)
         
         st.session_state.results = df_work
-        status_msg.success("✅ Arricchimento completato!")
+        status_msg.success("✅ Web scraping completato!")
         st.rerun()
 
-    # Esportazione CSV
-    csv_data = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button(
-        label="📥 Scarica Database Finale (CSV)",
-        data=csv_data,
-        file_name="estrazione_aziende.csv",
-        mime="text/csv",
-        width="stretch"
-    )
+    # Esportazione
+    csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
+    st.download_button("📥 Scarica CSV", csv, "database.csv", "text/csv", width="stretch")
