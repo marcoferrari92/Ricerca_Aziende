@@ -36,7 +36,10 @@ with st.sidebar:
     raggio = st.slider("Raggio Scansione (KM)", 1, 20, 5)
     # L'utente seleziona i codici (es. C.25) definiti nel tuo mapping.py
     scelte = st.multiselect("Settori Aziendali (Codici ATECO)", list(ATECO_MAP.keys()))
-    
+
+    # Nel file app.py, dentro with st.sidebar:
+    max_test = st.slider("Limite Aziende (Safety Block)", 5, 200, 20) 
+
     st.divider()
     if st.button("🗑️ Reset Database"):
         st.session_state.results = pd.DataFrame()
@@ -86,7 +89,8 @@ if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", use_container_width=True, typ
                 st.session_state.pos['lon'], 
                 raggio, 
                 keywords_finali, 
-                API_KEY
+                API_KEY,
+                max_results=max_test
             )
             
             st.write(f"Trovate {len(df)} aziende uniche. Elaborazione completata.")
