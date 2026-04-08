@@ -124,23 +124,6 @@ if not st.session_state.results.empty:
             df_work.at[idx, 'Partita IVA'] = piva
             df_work.at[idx, 'Email'] = email
             
-            # 2. Scraping Bilancio
-            piva_clean = "".join(filter(str.isdigit, str(piva)))
-            if len(piva_clean) == 11:
-                # Chiamata alla funzione (assicurati che utils.py restituisca fatt, dip, testo)
-                fatt, dip, testo_letto = scrape_camerale_data(piva_clean)
-                df_work.at[idx, 'Fatturato'] = fatt
-                df_work.at[idx, 'Dipendenti'] = dip
-                
-                with debug_window.container():
-                    st.markdown(f"**Analizzando:** {row['Ragione Sociale']} ({piva_clean})")
-                    st.text_area("Testo rilevato:", testo_letto, height=150, key=f"txt_{idx}")
-                    st.write(f"📊 **Fatturato:** {fatt} | **Dipendenti:** {dip}")
-                    st.divider()
-            else:
-                with debug_window.container():
-                    st.warning(f"⚠️ {row['Ragione Sociale']}: P.IVA non valida. Salto bilancio.")
-            
             progress_bar.progress((i + 1) / count)
         
         st.session_state.results = df_work
