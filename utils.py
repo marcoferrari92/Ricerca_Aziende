@@ -95,56 +95,6 @@ def scrape_sito_aziendale(url):
         return "Errore Sito", "N.D."
 
 
-import googlemaps
-
-@st.cache_data(show_spinner=False)
-def fetch_data_google(lat, lon, raggio_km, macrosettori, api_key):
-    gmaps = googlemaps.Client(key=api_key)
-    ris = []
-    raggio_m = int(raggio_km * 1000)
-
-    for settore in macrosettori:
-        # 1. Ricerca nearby (Prende una lista di Place ID)
-        places_result = gmaps.places_nearby(
-            location=(lat, lon),
-            radius=raggio_m,
-            keyword=settore
-        )
-
-        # Usiamo un placeholder per aggiornare l'utente in tempo reale
-        for place in places_result.get('results', []):
-            # 2. Place Details (Necessario per il SITO WEB)
-            # ATTENZIONE: Questa chiamata ha un costo separato. 
-            # Se hai 20 risultati, farai 20 chiamate Details.
-            try:
-                details = gmaps.place(
-                    place['place_id'], 
-                    fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
-                    language='it'
-                )['result']
-                
-                # Escludiamo attività chiuse permanentemente
-                if details.get('business_status') != 'OPERATIONAL':
-                    continue
-
-                ris.append({
-                    'Ragione Sociale': details.get('name', 'N.D.'),
-                    'Indirizzo': details.get('formatted_address', 'N.D.'),
-                    'Sito Web': details.get('website', 'N.D.'),
-                    'Email': 'N.D.',
-                    'Partita IVA': 'N.D.',
-                    'Fatturato': 'N.D.',
-                    'Dipendenti': 'N.D.',
-                    'lat': details['geometry']['location']['lat'],
-                    'lon': details['geometry']['location']['lng']
-                })
-            except Exception as e:
-                st.error(f"Errore nel recupero dettagli per {place.get('name')}: {e}")
-                
-    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale'])
-
-
-
 
 def scrape_camerale_data(piva):
     piva_clean = "".join(filter(str.isdigit, str(piva)))
@@ -177,3 +127,58 @@ def scrape_camerale_data(piva):
 
     except Exception as e:
         return f"ERRORE FISICO: {str(e)}", "N.D."
+
+
+
+@st.cache_data(show_spinner=False)
+def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
+    gmaps = googlemaps.Client(key=api_key)
+    ris = []
+    raggio_m = int(raggio_km * 1000)
+    
+    count_aziende = 0 # Contatore di sicurezza
+
+    for kw in keywords_list:
+        if count_aziende >= max_results:
+            break
+            
+        response = gmaps.places_nearby(
+            location=(lat, lon),
+            radius=raggio_m,
+            keyword=kw
+        )
+        
+        while True:
+            for place in response.get('results', []):
+                # Se abbiamo raggiunto il limite, smettiamo di chiedere i Details (che costano)
+                if count_aziende >= max_results:
+                    break
+                
+                # Chiamata Details (Questa è quella che incide sul budget)
+                details = gmaps.place(
+                    place['place_id'], 
+                    fields=['name', 'formatted_address', 'website', 'geometry'],
+                    language='it'
+                )['result']
+                
+                ris.append({
+                    'Ragione Sociale': details.get('name', 'N.D.'),
+                    'Sito Web': details.get('website', 'N.D.'),
+                    'Indirizzo': details.get('formatted_address', 'N.D.'),
+                    'lat': details['geometry']['location']['lat'],
+                    'lon': details['geometry']['location']['lng'],
+                    'Partita IVA': 'N.D.',
+                    'Fatturato': 'N.D.'
+                })
+                
+                count_aziende += 1
+
+            # Controllo paginazione + controllo limite
+            token = response.get('next_page_token')
+            if not token or count_aziende >= max_results:
+                break
+                
+            time.sleep(2) 
+            response = gmaps.places_nearby(page_token=token)
+            
+    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale'])
