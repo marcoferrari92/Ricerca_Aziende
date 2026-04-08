@@ -10,7 +10,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import delle componenti esterne
 from mapping import ATECO_MAP 
-from utils import fetch_data_google, scrape_sito_aziendale
+from utils import fetch_data_google, scrape_sito_aziendale, scrape_camerale_data
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor Pro")
@@ -87,28 +87,31 @@ if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", width="stretch", type="primar
                 max_results=max_test
             )
             
-            st.write(f"Trovate {len(df)} aziende. Elaborazione completata.")
-            st.session_state.results = df
-            status.update(label="Scansione Completata!", state="complete", expanded=False)
+            if not df.empty:
+                st.write(f"Trovate {len(df)} aziende. Elaborazione completata.")
+                st.session_state.results = df
+                status.update(label="Scansione Completata!", state="complete", expanded=False)
+            else:
+                st.error("Nessun risultato trovato in quest'area.")
+                status.update(label="Nessun risultato", state="error", expanded=False)
         st.rerun()
 
-# --- RISULTATI E SCRAPING AVANZATO ---
+# --- RISULTATI E ARRICCHIMENTO ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("2. Database Aziende Trovate")
     
-    view_df = st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore')
-    st.dataframe(view_df, width="stretch")
+    # Visualizziamo tutto il dataframe (incluse Categorie e Stato)
+    # Rimuoviamo solo le coordinate lat/lon per pulizia visiva, ma teniamo tutto il resto
+    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), width="stretch")
 
     st.subheader("3. Arricchimento Profondo (Email + P.IVA + Bilancio)")
     
-    # CORRETTO: Adesso l'if è indentato correttamente
     if st.button("🔍 ESTRAI DATI COMPLETI", width='stretch'):
         df_work = st.session_state.results.copy()
         progress_bar = st.progress(0)
         status_msg = st.empty()
         
-        # --- FINESTRA DI ISPEZIONE LIVE ---
         st.subheader("🕵️ Ispettore Scraper (Real-time)")
         debug_window = st.empty() 
         
@@ -116,28 +119,27 @@ if not st.session_state.results.empty:
         for i, (idx, row) in enumerate(df_work.iterrows()):
             status_msg.info(f"⏳ Analisi {i+1}/{count}: {row['Ragione Sociale']}")
             
-            # 1. Scraping P.IVA (dal sito aziendale)
+            # 1. Scraping Sito (P.IVA e Email)
             piva, email = scrape_sito_aziendale(row['Sito Web'])
             df_work.at[idx, 'Partita IVA'] = piva
             df_work.at[idx, 'Email'] = email
             
-            # 2. Scraping Bilancio (da ReportAziende)
+            # 2. Scraping Bilancio
             piva_clean = "".join(filter(str.isdigit, str(piva)))
             if len(piva_clean) == 11:
-                # Nota: Assicurati che utils.py restituisca 3 valori (fatt, dip, testo)
+                # Chiamata alla funzione (assicurati che utils.py restituisca fatt, dip, testo)
                 fatt, dip, testo_letto = scrape_camerale_data(piva_clean)
                 df_work.at[idx, 'Fatturato'] = fatt
                 df_work.at[idx, 'Dipendenti'] = dip
                 
-                # STAMPA NELL'INTERFACCIA IL CONTENUTO LETTO
                 with debug_window.container():
                     st.markdown(f"**Analizzando:** {row['Ragione Sociale']} ({piva_clean})")
-                    st.text_area("Testo rilevato sulla pagina di bilancio:", testo_letto, height=200, key=f"txt_{idx}")
-                    st.write(f"📊 Risultato Estratto: **Fatturato:** {fatt} | **Dipendenti:** {dip}")
+                    st.text_area("Testo rilevato:", testo_letto, height=150, key=f"txt_{idx}")
+                    st.write(f"📊 **Fatturato:** {fatt} | **Dipendenti:** {dip}")
                     st.divider()
             else:
                 with debug_window.container():
-                    st.warning(f"⚠️ {row['Ragione Sociale']}: P.IVA non trovata sul sito. Salto ricerca bilancio.")
+                    st.warning(f"⚠️ {row['Ragione Sociale']}: P.IVA non valida. Salto bilancio.")
             
             progress_bar.progress((i + 1) / count)
         
@@ -145,6 +147,12 @@ if not st.session_state.results.empty:
         status_msg.success("✅ Arricchimento completato!")
         st.rerun()
 
-    # Esportazione finale
-    csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica Database Finale (CSV)", csv, "database.csv", "text/csv", width="stretch")
+    # Esportazione CSV
+    csv_data = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
+    st.download_button(
+        label="📥 Scarica Database Finale (CSV)",
+        data=csv_data,
+        file_name="estrazione_aziende.csv",
+        mime="text/csv",
+        width="stretch"
+    )
