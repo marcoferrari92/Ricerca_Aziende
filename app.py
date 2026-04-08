@@ -104,49 +104,45 @@ if not st.session_state.results.empty:
 
     st.subheader("3. Arricchimento Profondo (Email + P.IVA + Bilancio)")
     
-    if st.button("🔍 ESTRAI DATI COMPLETI", use_container_width=True):
+   if st.button("🔍 ESTRAI DATI COMPLETI", width='stretch'):
         df_work = st.session_state.results.copy()
         progress_bar = st.progress(0)
+        status_msg = st.empty()
         
-        # --- NUOVA AREA LOG ---
-        st.subheader("🖥️ Log di Elaborazione")
-        status_container = st.empty() # Area per il messaggio principale
-        log_container = st.expander("Mostra dettagli tecnici", expanded=True)
-        log_text = "" # Qui accumuliamo le righe del log
+        # --- FINESTRA DI ISPEZIONE LIVE ---
+        st.subheader("🕵️ Ispettore Scraper (Real-time)")
+        debug_window = st.empty() # Questo campo verrà sovrascritto a ogni giro
         
         count = len(df_work)
         for i, (idx, row) in enumerate(df_work.iterrows()):
-            nome_az = row['Ragione Sociale']
-            status_container.info(f"⏳ Elaborazione {i+1}/{count}: **{nome_az}**")
+            status_msg.info(f"⏳ Analisi {i+1}/{count}: {row['Ragione Sociale']}")
             
-            # 1. Scraping Sito
-            log_text += f"🌐 {nome_az}: Analisi sito {row['Sito Web']}...\n"
-            log_container.code(log_text) # Aggiorna il box del codice
-            
-            piva, email_web = scrape_sito_aziendale(row['Sito Web'])
+            # 1. Scraping P.IVA (dal sito aziendale)
+            piva, email = scrape_sito_aziendale(row['Sito Web'])
             df_work.at[idx, 'Partita IVA'] = piva
+            df_work.at[idx, 'Email'] = email
             
-            if row.get('Email') == 'N.D.':
-                df_work.at[idx, 'Email'] = email_web
-            
-            # 2. Dati Camerali (Bilancio)
+            # 2. Scraping Bilancio (da ReportAziende)
             piva_clean = "".join(filter(str.isdigit, str(piva)))
             if len(piva_clean) == 11:
-                log_text += f"   ﹂ P.IVA trovata: {piva_clean}. Cerco bilancio...\n"
-                log_container.code(log_text)
-                
-                fatt, dip = scrape_camerale_data(piva_clean)
+                fatt, dip, testo_letto = scrape_camerale_data(piva_clean)
                 df_work.at[idx, 'Fatturato'] = fatt
                 df_work.at[idx, 'Dipendenti'] = dip
-                log_text += f"   ﹂ Risultato: {fatt}, {dip} dipendenti.\n"
+                
+                # STAMPA NELL'INTERFACCIA IL CONTENUTO LETTO
+                with debug_window.container():
+                    st.markdown(f"**Analizzando:** {row['Ragione Sociale']} ({piva_clean})")
+                    st.text_area("Testo rilevato sulla pagina di bilancio:", testo_letto, height=200)
+                    st.write(f"📊 Risultato Estratto: **Fatturato:** {fatt} | **Dipendenti:** {dip}")
+                    st.divider()
             else:
-                log_text += f"   ﹂ ⚠️ P.IVA non trovata o non valida.\n"
+                with debug_window.container():
+                    st.warning(f"⚠️ {row['Ragione Sociale']}: P.IVA non trovata sul sito. Salto ricerca bilancio.")
             
-            log_container.code(log_text)
             progress_bar.progress((i + 1) / count)
         
         st.session_state.results = df_work
-        status_container.success("✅ Arricchimento completato!")
+        status_msg.success("✅ Arricchimento completato!")
         st.rerun()
 
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
