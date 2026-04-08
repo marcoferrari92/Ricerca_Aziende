@@ -205,53 +205,39 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 def scrape_camerale_data(piva):
-    """
-    Tenta di recuperare dati di bilancio con log dettagliato.
-    """
+    """Recupera dati di bilancio e restituisce il testo grezzo per il debug."""
     if not piva or len(piva) != 11:
-        return "P.IVA non valida", "N.D."
+        return "N.D.", "N.D.", "P.IVA non valida"
     
-    # Proviamo un aggregatore diverso o una ricerca più generica
-    # Nota: ReportAziende spesso richiede un percorso basato sul nome, 
-    # la ricerca per P.IVA via URL diretto può essere bloccata.
     url = f"https://www.reportaziende.it/ricerca?q={piva}"
-    
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     }
 
     try:
-        res = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
-        
-        # LOG DI DEBUG NELLA CONSOLE DI STREAMLIT
-        print(f"DEBUG BILANCIO - P.IVA: {piva} | Status: {res.status_code} | URL finale: {res.url}")
-
-        if res.status_code != 200:
-            return f"Errore {res.status_code}", "N.D."
-
+        res = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
-        testo = soup.get_text(separator=' ', strip=True)
-
-        # Se il testo è molto corto, probabilmente siamo stati bloccati
-        if len(testo) < 500:
-            return "Sito Protetto (Bot Block)", "N.D."
-
+        
+        # Estraiamo tutto il testo visibile per capire cosa vede lo script
+        testo_grezzo = soup.get_text(separator=' ', strip=True)
+        
+        # Logica di estrazione (Regex)
         fatturato = "N.D."
         dipendenti = "N.D."
-
-        # Cerchiamo i dati nel testo con regex più flessibili
-        # Pattern per Fatturato: cerca numeri dopo la parola fatturato
-        fatt_match = re.search(r'(?:Fatturato|Volume d\'affari).*?([\d\.,]+)', testo, re.IGNORECASE)
+        
+        fatt_match = re.search(r'Fatturato.*?([\d\.]+)', testo_grezzo, re.IGNORECASE)
         if fatt_match:
-            fatturato = fatt_match.group(1).rstrip('.') + " €"
-
-        # Pattern per Dipendenti
-        dip_match = re.search(r'(?:Dipendenti|Addetti).*?(\d+)', testo, re.IGNORECASE)
+            fatturato = fatt_match.group(1) + " €"
+            
+        dip_match = re.search(r'Dipendenti.*?(\d+)', testo_grezzo, re.IGNORECASE)
         if dip_match:
             dipendenti = dip_match.group(1)
 
-        return fatturato, dipendenti
+        # Se il server dà errore (es. 404), lo scriviamo nel testo grezzo
+        if res.status_code != 200:
+            testo_grezzo = f"ERRORE SERVER {res.status_code}: La pagina non esiste o il bot è stato bloccato."
+
+        return fatturato, dipendenti, testo_grezzo
 
     except Exception as e:
-        return f"Errore: {str(e)[:20]}", "N.D."
+        return "Errore", "N.D.", f"Eccezione: {str(e)}"
