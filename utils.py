@@ -145,99 +145,60 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     count_aziende = 0
 
     for kw in keywords_list:
-        if count_aziende >= max_results: break
-        try:
-            response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
-            while True:
-                results = response.get('results', [])
-                for place in results:
-                    if count_aziende >= max_results: break
-                    try:
-                        details = gmaps.place(
-                            place['place_id'], 
-                            fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'types'],
-                            language='it'
-                        )['result']
-                        
-                        # Mapping Stato
-                        s_raw = details.get('business_status', 'N.D.')
-                        s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.', 'CLOSED_PERMANENTLY': 'Chiusa Def.'}.get(s_raw, s_raw)
-                        
-                        # Mapping Categorie
-                        cat = ", ".join(details.get('types', [])[:3])
-
-                        ris.append({
-                            'Ragione Sociale': details.get('name', 'N.D.'),
-                            'Stato': s_ita,
-                            'Categorie': cat,
-                            'Sito Web': details.get('website', 'N.D.'),
-                            'Indirizzo': details.get('formatted_address', 'N.D.'),
-                            'Partita IVA': 'N.D.', # Prepariamo la colonna
-                            'Email': 'N.D.',       # Prepariamo la colonna
-                            'Fatturato': 'N.D.',   # Prepariamo la colonna
-                            'Dipendenti': 'N.D.',   # Prepariamo la colonna
-                            'lat': details['geometry']['location']['lat'],
-                            'lon': details['geometry']['location']['lng']
-                        })
-                        count_aziende += 1
-                    except: continue
-                
-                token = response.get('next_page_token')
-                if not token or count_aziende >= max_results: break
-                time.sleep(2)
-                response = gmaps.places_nearby(page_token=token)
-        except: continue
+        if count_aziende >= max_results:
+            break
             
-    return pd.DataFrame(ris) if ris else pd.DataFrame()
+        # --- BLOCCO CORRETTO PER GESTIRE L'ERRORE ---
+        try:
+            response = gmaps.places_nearby(
+                location=(lat, lon),
+                radius=raggio_m,
+                keyword=kw
+            )
+        except Exception as e:
+            # USIAMO st.stop() PER BLOCCARE TUTTO E LEGGERE L'ERRORE
+            st.error(f"❌ ERRORE CRITICO GOOGLE: {e}")
+            st.info("L'esecuzione è stata bloccata per permetterti di leggere l'errore sopra.")
+            st.stop() # <--- Fondamentale per il debug
+        # --------------------------------------------
 
+        while True:
+            # Ora 'response' esiste sicuramente se siamo qui
+            results = response.get('results', [])
+            
+            for place in results:
+                if count_aziende >= max_results:
+                    break
+                
+                try:
+                    details = gmaps.place(
+                        place['place_id'], 
+                        fields=['name', 'formatted_address', 'website', 'geometry'],
+                        language='it'
+                    )['result']
+                    
+                    ris.append({
+                        'Ragione Sociale': details.get('name', 'N.D.'),
+                        'Sito Web': details.get('website', 'N.D.'),
+                        'Indirizzo': details.get('formatted_address', 'N.D.'),
+                        'lat': details['geometry']['location']['lat'],
+                        'lon': details['geometry']['location']['lng'],
+                        'Partita IVA': 'N.D.',
+                        'Fatturato': 'N.D.',
+                        'Dipendenti': 'N.D.'
+                    })
+                    count_aziende += 1
+                except:
+                    continue
 
-
-
-
-
-from openai import OpenAI
-import json
-
-def chiedi_a_openai(nome_azienda, piva, sito, api_key_openai):
-    """
-    Usa OpenAI per incrociare i dati e trovare bilancio e dipendenti.
-    """
-    if not api_key_openai:
-        return "Manca API Key", "N.D.", "Configura la chiave OpenAI"
-
-    client = OpenAI(api_key=api_key_openai)
-    
-    # Prompt ottimizzato per estrazione dati business
-    prompt = f"""
-    Sei un analista finanziario esperto. 
-    Trova il fatturato più recente (anno 2023 o 2024) e il numero di dipendenti per:
-    Ragione Sociale: {nome_azienda}
-    Partita IVA: {piva}
-    Sito Web: {sito}
-
-    Rispondi ESCLUSIVAMENTE con un oggetto JSON con queste chiavi:
-    "fatturato": (stringa con valore e valuta, es: "1.5 Mln €"),
-    "dipendenti": (stringa con il numero o range, es: "10-20"),
-    "fonte": (breve descrizione della fonte trovata)
-
-    Se i dati non sono disponibili, scrivi "N.D.".
-    """
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini", # Modello veloce ed economico, ottimo per questo compito
-            messages=[{"role": "user", "content": prompt}],
-            response_format={ "type": "json_object" } # Forza OpenAI a rispondere in JSON
-        )
-        
-        # Parsing della risposta
-        risposta_json = json.loads(response.choices[0].message.content)
-        
-        fatturato = risposta_json.get("fatturato", "N.D.")
-        dipendenti = risposta_json.get("dipendenti", "N.D.")
-        fonte = risposta_json.get("fonte", "N.D.")
-        
-        return fatturato, dipendenti, f"Dati AI: {fonte}"
-
-    except Exception as e:
-        return "Errore AI", "N.D.", str(e)
+            token = response.get('next_page_token')
+            if not token or count_aziende >= max_results:
+                break
+                
+            time.sleep(2)
+            try:
+                response = gmaps.places_nearby(page_token=token)
+            except:
+                break
+            
+    return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
