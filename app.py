@@ -27,7 +27,6 @@ st.markdown("Ottieni dati aziendali tramite **Google Places** + **Web Scraping**
 
 with st.sidebar:
     st.header("🔑 Autenticazione")
-    # Campo per inserire la chiave manualmente
     user_api_key = st.text_input("Inserisci la tua Google API Key", type="password", help="La chiave non viene salvata sul server.")
     
     if not user_api_key:
@@ -57,7 +56,7 @@ if not st.session_state.results.empty:
     for _, row in st.session_state.results.iterrows():
         folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
 
-map_res = st_folium(m, width="100%", height=400, key="map_bi")
+map_res = st_folium(m, width="stretch", height=400, key="map_bi")
 
 if map_res and map_res['last_clicked']:
     new_lat, new_lon = map_res['last_clicked']['lat'], map_res['last_clicked']['lng']
@@ -66,7 +65,7 @@ if map_res and map_res['last_clicked']:
         st.rerun()
 
 # --- BOTTONE DI RICERCA GOOGLE ---
-if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", use_container_width=True, type="primary"):
+if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", width="stretch", type="primary"):
     if not user_api_key:
         st.error("❌ Errore: Devi inserire una API Key valida nella barra laterale!")
     elif not scelte:
@@ -79,13 +78,12 @@ if st.button("🚀 TROVA AZIENDE CON GOOGLE MAPS", use_container_width=True, typ
         with st.status(f"Ricerca in corso per {len(keywords_finali)} categorie...", expanded=True) as status:
             st.write("Connessione a Google Places...")
             
-            # Passiamo la chiave inserita dall'utente (user_api_key)
             df = fetch_data_google(
                 st.session_state.pos['lat'], 
                 st.session_state.pos['lon'], 
                 raggio, 
                 keywords_finali, 
-                user_api_key, # <--- Chiave dinamica
+                user_api_key,
                 max_results=max_test
             )
             
@@ -100,18 +98,19 @@ if not st.session_state.results.empty:
     st.subheader("2. Database Aziende Trovate")
     
     view_df = st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore')
-    st.dataframe(view_df, use_container_width=True)
+    st.dataframe(view_df, width="stretch")
 
     st.subheader("3. Arricchimento Profondo (Email + P.IVA + Bilancio)")
     
-   if st.button("🔍 ESTRAI DATI COMPLETI", width='stretch'):
+    # CORRETTO: Adesso l'if è indentato correttamente
+    if st.button("🔍 ESTRAI DATI COMPLETI", width='stretch'):
         df_work = st.session_state.results.copy()
         progress_bar = st.progress(0)
         status_msg = st.empty()
         
         # --- FINESTRA DI ISPEZIONE LIVE ---
         st.subheader("🕵️ Ispettore Scraper (Real-time)")
-        debug_window = st.empty() # Questo campo verrà sovrascritto a ogni giro
+        debug_window = st.empty() 
         
         count = len(df_work)
         for i, (idx, row) in enumerate(df_work.iterrows()):
@@ -125,6 +124,7 @@ if not st.session_state.results.empty:
             # 2. Scraping Bilancio (da ReportAziende)
             piva_clean = "".join(filter(str.isdigit, str(piva)))
             if len(piva_clean) == 11:
+                # Nota: Assicurati che utils.py restituisca 3 valori (fatt, dip, testo)
                 fatt, dip, testo_letto = scrape_camerale_data(piva_clean)
                 df_work.at[idx, 'Fatturato'] = fatt
                 df_work.at[idx, 'Dipendenti'] = dip
@@ -132,7 +132,7 @@ if not st.session_state.results.empty:
                 # STAMPA NELL'INTERFACCIA IL CONTENUTO LETTO
                 with debug_window.container():
                     st.markdown(f"**Analizzando:** {row['Ragione Sociale']} ({piva_clean})")
-                    st.text_area("Testo rilevato sulla pagina di bilancio:", testo_letto, height=200)
+                    st.text_area("Testo rilevato sulla pagina di bilancio:", testo_letto, height=200, key=f"txt_{idx}")
                     st.write(f"📊 Risultato Estratto: **Fatturato:** {fatt} | **Dipendenti:** {dip}")
                     st.divider()
             else:
@@ -145,5 +145,6 @@ if not st.session_state.results.empty:
         status_msg.success("✅ Arricchimento completato!")
         st.rerun()
 
+    # Esportazione finale
     csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-    st.download_button("📥 Scarica Database Finale (CSV)", csv, "database_aziende.csv", "text/csv")
+    st.download_button("📥 Scarica Database Finale (CSV)", csv, "database.csv", "text/csv", width="stretch")
