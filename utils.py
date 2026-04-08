@@ -151,8 +151,10 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 keyword=kw
             )
         except Exception as e:
-            st.error(f"⚠️ Errore con la keyword '{kw}': {e}")
-            continue # Salta questa keyword e passa alla prossima invece di crashare
+            # USIAMO st.stop() PER BLOCCARE TUTTO E LEGGERE L'ERRORE
+            st.error(f"❌ ERRORE CRITICO GOOGLE: {e}")
+            st.info("L'esecuzione è stata bloccata per permetterti di leggere l'errore sopra.")
+            st.stop() # <--- Fondamentale per il debug
         # --------------------------------------------
 
         while True:
