@@ -265,13 +265,13 @@ if not st.session_state.results.empty:
                     if row['Sito Web'] != 'N.D.':
                         p_web, e_web, testo_web, debug_info = scrape_sito_aziendale(row['Sito Web'])
                     
-                        df_work.at[idx, 'P.IVA (Crawler)'] = p_web
-                        df_work.at[idx, 'Email (Crawler)'] = e_web
-                        df_work.at[idx, 'testo_raw'] = testo_web
+                    df_work.at[idx, 'P.IVA (Crawler)'] = p_web
+                    df_work.at[idx, 'Email (Crawler)'] = e_web
+                    df_work.at[idx, 'testo_raw'] = testo_web
                     
-                        new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
-                        st.session_state.crawler_log += new_entry
-                        debug_area.markdown(st.session_state.crawler_log)
+                    new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
+                    st.session_state.crawler_log += new_entry
+                    debug_area.markdown(st.session_state.crawler_log)
 
                     bar.progress((i + 1) / len(df_work))
 
