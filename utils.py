@@ -77,8 +77,6 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import time
 
-
-
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
 def is_valid_piva(piva):
     if not piva or len(piva) != 11 or not piva.isdigit():
