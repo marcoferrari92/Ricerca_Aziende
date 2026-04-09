@@ -129,11 +129,13 @@ if not st.session_state.results.empty:
                     bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
                     
                     # RICEVIAMO 4 VALORI
-                    f, d, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
-                    
-                    # 1. Salviamo i dati puliti nel DataFrame
+                    # In app.py sotto il Bottone 2:
+                    f, d, piva, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+
+                    # Salvataggio nel DataFrame
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
+                    df_work.at[idx, 'P.IVA (AI)'] = piva # Assicurati che questa colonna esista
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
