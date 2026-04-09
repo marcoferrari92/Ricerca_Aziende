@@ -245,18 +245,39 @@ def cerca_testo_online(ragione_sociale, max_retry=2):
     return ""
 
 # --- 5. ESTRAZIONE AI ---
+import json
+from openai import OpenAI
+
 def estrai_con_ai(testo, api_key):
+    """
+    Usa OpenAI GPT per estrarre fatturato e dipendenti dal testo.
+    Restituisce tuple: (fatturato, dipendenti, testo_estratto)
+    """
     client = OpenAI(api_key=api_key)
-    prompt = f"Estrai fatturato e dipendenti dal testo in JSON: {{'fatturato': '...', 'dipendenti': '...'}}. Testo: {testo}"
+    
+    prompt = f"""
+Estrai i dati finanziari dal seguente testo in formato JSON:
+{{ "fatturato": "...", "dipendenti": "..." }}
+Testo: {testo}
+Se non trovi i dati, metti "N.D.".
+"""
+
     try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            response_format={ "type": "json_object" }
+            temperature=0
         )
-        dati = json.loads(response.choices[0].message.content)
-        return dati.get("fatturato", "N.D."), dati.get("dipendenti", "N.D."), testo[:2000]
+        # L'output è testo, facciamo il parsing manuale
+        content = response.choices[0].message.content.strip()
+        # Rimuoviamo eventuali spazi o backticks
+        content = content.replace("```json", "").replace("```", "").strip()
+        
+        dati = json.loads(content)
+        fatturato = dati.get("fatturato", "N.D.")
+        dipendenti = dati.get("dipendenti", "N.D.")
+        return fatturato, dipendenti, testo[:2000]
+    
     except Exception as e:
         return "Errore", "Errore", f"AI exception: {str(e)}"
 
