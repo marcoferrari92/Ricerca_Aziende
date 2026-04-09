@@ -77,18 +77,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import time
 
-def cerca_tutti_candidati_piva(testo):
-    if not testo: return []
-    
-    # Regex aggiornata con il nuovo tag C.F. che hai chiesto
-    # Cerca stringhe di 11 cifre precedute da tag comuni
-    pattern = r'(?i)(?:P\.?\s*IVA|VAT|Partita\s*IVA|P\s*I|C\.F\.|CF|Codice\s*Fiscale)[:\s/-]{1,6}(\d{11})\b'
-    
-    # Trova tutti i match, non solo il primo
-    matches = re.findall(pattern, testo)
-    
-    # Restituiamo la lista pulita (senza duplicati)
-    return list(set(matches))
+
 
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
 def is_valid_piva(piva):
@@ -101,55 +90,37 @@ def is_valid_piva(piva):
     check = (10 - s % 10) % 10
     return check == int(piva[-1])
 
-# --- FUNZIONE DI ESTRAZIONE CORE ---
-def cerca_piva(testo):
-    if not testo: 
-        return None
-    
-    # Regex potenziata: 
-    # - (?i) rende tutto case-insensitive
-    # - Cerca P.IVA, VAT, Partita IVA, P.I, CF, C.F., Codice Fiscale
-    # - Gestisce spazi, punti e simboli come / o : tra il tag e il numero
-    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|Partita\s*IVA|P\s*I|C\.F\.|CF|Codice\s*Fiscale)[:\s/-]{1,6}(\d{11})\b'
-    
-    matches = re.findall(piva_pattern, testo)
-    
-    for m in matches:
-        if is_valid_piva(m):
-            return m
-            
-    return None
-
 def scrape_sito_aziendale(url, ragione_sociale=""):
     if not url or url == 'N.D.':
-        return "Non trovata", "Non trovata", "", "Nessun dato"
+        return "Non trovata", "Non trovata", "", "Sito non disponibile"
 
     if not url.startswith('http'):
         url = 'https://' + url
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     visited = set()
     to_visit = [url]
     piva_f, email_f = "Non trovata", "Non trovata"
     testo_per_ai = ""
-    
-    # --- LOGICA DEBUG: LISTA NUMERI TROVATI ---
-    log_numeri_trovati = []
+    log_debug = []
 
-    def estrai_e_logga_numeri(sorgente, url_corrente):
-        """Funzione interna per loggare ogni sequenza di 11 cifre trovata"""
-        # Cerca tutte le sequenze di 11 cifre nel testo
+    # --- FUNZIONE DI RICERCA AGGRESSIVA ---
+    def estrai_piva_ovunque(sorgente):
+        """Estrae qualsiasi sequenza di 11 cifre e restituisce la prima valida"""
+        # Trova tutte le sequenze di 11 cifre pure
         candidati = re.findall(r'\b\d{11}\b', sorgente)
-        for c in candidati:
-            validita = "✅ (Valida)" if is_valid_piva(c) else "❌ (Luhn Fallito)"
-            entry = f"[{url_corrente}] Trovato: {c} {validita}"
-            if entry not in log_numeri_trovati:
-                log_numeri_trovati.append(entry)
+        
+        # Prova anche a cercare numeri con spazi (es. 012 345 678 90) e li pulisce
+        candidati_con_spazi = re.findall(r'\b(?:\d\s*){11}\b', sorgente)
+        candidati += ["".join(filter(str.isdigit, c)) for c in candidati_con_spazi]
+
+        for c in set(candidati):
+            if is_valid_piva(c):
+                return c
+        return None
 
     while to_visit and len(visited) < 5:
         current = to_visit.pop(0)
@@ -161,39 +132,39 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             if res.status_code != 200: continue
             
             html = res.text
-            # Logghiamo tutti i numeri di 11 cifre trovati nell'HTML grezzo
-            estrai_e_logga_numeri(html, current)
             
+            # 1. TENTATIVO IMMEDIATO SU HTML GREZZO (Prima di BeautifulSoup)
+            # Spesso la P.IVA è nei commenti o in script che BS4 potrebbe ignorare
+            if piva_f == "Non trovata":
+                found = estrai_piva_ovunque(html)
+                if found:
+                    piva_f = found
+                    log_debug.append(f"[{current}] P.IVA trovata nell'HTML grezzo: {found}")
+
             soup = BeautifulSoup(html, 'html.parser')
 
-            # 1. CERCA NEI META TAG
+            # 2. TENTATIVO NEI META TAG
             if piva_f == "Non trovata":
                 meta_content = " ".join([tag.get('content', '') for tag in soup.find_all('meta')])
-                found = cerca_piva(meta_content)
-                if found: piva_f = found
+                found = estrai_piva_ovunque(meta_content)
+                if found:
+                    piva_f = found
+                    log_debug.append(f"[{current}] P.IVA trovata nei Meta Tag: {found}")
 
-            # Pulizia per estrazione testo
-            for el in soup(["script", "style", "nav", "header"]): 
-                el.decompose()
-
-            text = soup.get_text(separator=' ', strip=True)
+            # Estrazione testo per AI ed Email
+            text_full = soup.get_text(separator=' ', strip=True)
             if len(testo_per_ai) < 6000:
-                testo_per_ai += f" [URL: {current}] " + text
+                testo_per_ai += f" [URL: {current}] " + text_full
 
-            # 2. CERCA NEL TESTO PULITO
-            if piva_f == "Non trovata":
-                piva_f = cerca_piva(text) or "Non trovata"
-
-            # 3. CERCA EMAIL
             if email_f == "Non trovata":
-                em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+                em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text_full)
                 if em: email_f = em.group(0).lower()
 
-            # 4. RACCOLTA LINK
+            # Raccolta Link
             for link in soup.find_all('a', href=True):
                 href = link['href']
                 full = urljoin(url, href)
-                if any(k in full.lower() for k in ['contatti', 'contact', 'about', 'chi-siamo', 'legal', 'privacy', 'note-legali']):
+                if any(k in full.lower() for k in ['contatti', 'contact', 'about', 'chi-siamo', 'legal', 'privacy', 'info']):
                     if full not in visited:
                         to_visit.append(full)
 
@@ -201,35 +172,31 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
                 break
 
         except Exception as e:
-            log_numeri_trovati.append(f"Errore su {current}: {str(e)}")
+            log_debug.append(f"Errore su {current}: {str(e)}")
             continue
 
-    # --- FALLBACK SELENIUM ---
+    # --- 3. FALLBACK SELENIUM (ULTIMA SPIAGGIA) ---
     if piva_f == "Non trovata":
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
-            
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")
-            driver = webdriver.Chrome(options=chrome_options)
+            options = Options()
+            options.add_argument("--headless")
+            driver = webdriver.Chrome(options=options)
             driver.get(url)
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2) 
+            time.sleep(3) # Tempo per caricare script dinamici
             
-            page_source = driver.page_source
-            estrai_e_logga_numeri(page_source, "Selenium-Scroll")
-            
-            piva_f = cerca_piva(page_source) or "Non trovata"
+            source = driver.page_source
+            found = estrai_piva_ovunque(source)
+            if found:
+                piva_f = found
+                log_debug.append(f"[Selenium] Trovata dopo rendering: {found}")
             driver.quit()
-        except Exception as e:
-            log_numeri_trovati.append(f"Errore Selenium: {str(e)}")
+        except:
+            pass
 
-    # Prepariamo la stringa finale del log di debug
-    debug_log = "\n".join(log_numeri_trovati) if log_numeri_trovati else "Nessun numero di 11 cifre individuato."
-
-    # Ritorna 4 valori invece di 3
-    return piva_f, email_f, testo_per_ai[:6000], debug_log
+    debug_final = "\n".join(log_debug) if log_debug else "Nessuna P.IVA valida trovata nelle pagine scansionate."
+    return piva_f, email_f, testo_per_ai[:6000], debug_final
 
 
 # --- FUNZIONE EXTRA PER FATTURATO (Ricerca Esterna Gratis) ---
