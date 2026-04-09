@@ -68,6 +68,15 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
+
+
+
+import requests
+import re
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+# --- VALIDAZIONE P.IVA ---
 def is_valid_piva(piva):
     if len(piva) != 11 or not piva.isdigit():
         return False
@@ -80,6 +89,7 @@ def is_valid_piva(piva):
 
 
 def scrape_sito_aziendale(url):
+
     if not url or url == 'N.D.':
         return "Non trovata", "Non trovata", ""
 
@@ -96,8 +106,16 @@ def scrape_sito_aziendale(url):
     piva_f, email_f = "Non trovata", "Non trovata"
     testo_per_ai = ""
 
-    # Regex MIGLIORATA (richiede contesto)
-    piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,10}(\d{11})'
+    # Regex più robusta
+    piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,15}(\d{11})'
+
+    # --- FUNZIONE DI ESTRAZIONE ---
+    def cerca_piva(testo):
+        matches = re.findall(piva_pattern, testo, re.IGNORECASE)
+        for m in matches:
+            if is_valid_piva(m):
+                return m
+        return None
 
     while to_visit and len(visited) < 5:
         current = to_visit.pop(0)
@@ -108,31 +126,56 @@ def scrape_sito_aziendale(url):
             if res.status_code != 200:
                 continue
 
-            soup = BeautifulSoup(res.text, 'html.parser')
+            html = res.text
+            soup = BeautifulSoup(html, 'html.parser')
 
             for el in soup(["script", "style"]):
                 el.decompose()
 
             text = soup.get_text(separator=' ', strip=True)
 
+            # --- TESTO PER AI ---
             if len(testo_per_ai) < 5000:
                 testo_per_ai += f" [URL: {current}] " + text
 
-            # --- P.IVA ---
+            # =========================
+            # 🔍 1. CERCA SU TESTO PULITO
+            # =========================
             if piva_f == "Non trovata":
-                matches = re.findall(piva_pattern, text, re.IGNORECASE)
-                for m in matches:
-                    if is_valid_piva(m):
-                        piva_f = m
-                        break
+                found = cerca_piva(text)
+                if found:
+                    piva_f = found
 
-            # --- EMAIL ---
+            # =========================
+            # 🔍 2. CERCA SU HTML RAW (HEADER HACK)
+            # =========================
+            if piva_f == "Non trovata":
+                found = cerca_piva(html)
+                if found:
+                    piva_f = found
+
+            # =========================
+            # 🔍 3. CERCA SOLO HEADER
+            # =========================
+            if piva_f == "Non trovata":
+                header = soup.find('header')
+                if header:
+                    header_text = header.get_text(" ", strip=True)
+                    found = cerca_piva(header_text)
+                    if found:
+                        piva_f = found
+
+            # =========================
+            # 📧 EMAIL
+            # =========================
             if email_f == "Non trovata":
                 em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
                 if em:
                     email_f = em.group(0).lower()
 
-            # --- NUOVE PAGINE (intelligente) ---
+            # =========================
+            # 🔗 LINK INTERNI
+            # =========================
             for link in soup.find_all('a', href=True):
                 href = link['href']
                 full = urljoin(url, href)
@@ -149,6 +192,33 @@ def scrape_sito_aziendale(url):
 
         except:
             continue
+
+    # =========================
+    # 🚀 FALLBACK SELENIUM (SOLO SE NON TROVATA)
+    # =========================
+    if piva_f == "Non trovata":
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            import time
+
+            options = Options()
+            options.add_argument("--headless")
+            options.add_argument("--disable-gpu")
+
+            driver = webdriver.Chrome(options=options)
+            driver.get(url)
+            time.sleep(3)
+
+            html = driver.page_source
+            driver.quit()
+
+            found = cerca_piva(html)
+            if found:
+                piva_f = found
+
+        except:
+            pass
 
     return piva_f, email_f, testo_per_ai[:6000]
 
