@@ -69,88 +69,87 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 def is_valid_piva(piva):
-    """Algoritmo di Luhn per validare la P.IVA."""
-    if not piva or len(piva) != 11 or not piva.isdigit():
+    if len(piva) != 11 or not piva.isdigit():
         return False
-    s = 0
-    for i in range(11):
-        n = int(piva[i])
-        if i % 2 == 1:
-            n *= 2
-            if n > 9: n -= 9
-        s += n
-    return s % 10 == 0
+    
+    s = sum(int(piva[i]) for i in range(0, 10, 2))
+    s += sum((int(piva[i]) * 2 - 9) if int(piva[i]) * 2 > 9 else int(piva[i]) * 2 for i in range(1, 10, 2))
+    
+    check = (10 - s % 10) % 10
+    return check == int(piva[-1])
+
 
 def scrape_sito_aziendale(url):
-    """
-    Naviga il sito, estrae P.IVA ed Email usando regex e 
-    restituisce il testo completo per l'analisi successiva dell'AI.
-    """
     if not url or url == 'N.D.':
         return "Non trovata", "Non trovata", ""
-    
-    if not url.startswith('http'): 
+
+    if not url.startswith('http'):
         url = 'http://' + url
-    
-    # Header simulato per apparire come un browser reale (evita blocchi 403)
+
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0'
     }
-    
-    # Pagine dove solitamente si trovano i dati legali
-    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy", "/note-legali"]
-    
+
+    visited = set()
+    to_visit = [url]
+
     piva_f, email_f = "Non trovata", "Non trovata"
     testo_per_ai = ""
-    
-    # Regex migliorata: cattura 11 cifre ignorando IT o P.IVA davanti
-    piva_pattern = r'(?i:IT|P\.IVA|P\.I\.)?\s*(\d{11})'
 
-    for sfx in suffixes:
+    # Regex MIGLIORATA (richiede contesto)
+    piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,10}(\d{11})'
+
+    while to_visit and len(visited) < 5:
+        current = to_visit.pop(0)
+        visited.add(current)
+
         try:
-            full_url = url.rstrip('/') + sfx
-            res = requests.get(full_url, headers=headers, timeout=8, verify=False)
-            
-            if res.status_code != 200: 
+            res = requests.get(current, headers=headers, timeout=6)
+            if res.status_code != 200:
                 continue
-                
+
             soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # Rimuoviamo elementi inutili per pulire il testo
-            for element in soup(["script", "style", "nav", "header"]):
-                element.decompose()
-                
-            # Prendiamo il testo pulito
-            testo_pagina = soup.get_text(separator=' ', strip=True)
-            
-            # Accumuliamo il testo per darlo in pasto all'AI (limitiamo a 5000 caratteri totali)
+
+            for el in soup(["script", "style"]):
+                el.decompose()
+
+            text = soup.get_text(separator=' ', strip=True)
+
             if len(testo_per_ai) < 5000:
-                testo_per_ai += f" [URL: {sfx}] " + testo_pagina
-            
-            # --- RICERCA P.IVA ---
+                testo_per_ai += f" [URL: {current}] " + text
+
+            # --- P.IVA ---
             if piva_f == "Non trovata":
-                matches = re.findall(piva_pattern, testo_pagina)
+                matches = re.findall(piva_pattern, text, re.IGNORECASE)
                 for m in matches:
-                    # m è il gruppo (\d{11}), quindi solo i numeri
                     if is_valid_piva(m):
                         piva_f = m
                         break
-            
-            # --- RICERCA EMAIL ---
-            if email_f == "Non trovata":
-                em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo_pagina)
-                if em_match:
-                    email_f = em_match.group(0).lower()
 
-            # Se abbiamo trovato tutto nella prima pagina, possiamo fermarci
-            if piva_f != "Non trovata" and email_f != "Non trovata": 
+            # --- EMAIL ---
+            if email_f == "Non trovata":
+                em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+                if em:
+                    email_f = em.group(0).lower()
+
+            # --- NUOVE PAGINE (intelligente) ---
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                full = urljoin(url, href)
+
+                if any(k in full.lower() for k in [
+                    'contatti', 'contact', 'about', 'chi-siamo',
+                    'privacy', 'legal', 'impressum'
+                ]):
+                    if full not in visited:
+                        to_visit.append(full)
+
+            if piva_f != "Non trovata" and email_f != "Non trovata":
                 break
-                
-        except Exception:
+
+        except:
             continue
-            
-    # Restituiamo 3 valori: P.IVA, Email e il Testo per l'AI
+
     return piva_f, email_f, testo_per_ai[:6000]
 
 
