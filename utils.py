@@ -79,17 +79,20 @@ import time
 
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
 def is_valid_piva(piva_raw):
-    # Pulizia: rimuove "IT" e qualsiasi carattere non numerico
+    # Rimuove IT, spazi, punti, trattini e tiene SOLO i numeri
     piva = "".join(filter(str.isdigit, str(piva_raw)))
     
+    # Se dopo la pulizia non abbiamo esattamente 11 cifre, non è una P.IVA
     if not piva or len(piva) != 11:
         return False
         
+    # Algoritmo di Luhn sulle 11 cifre rimaste
     s = sum(int(piva[i]) for i in range(0, 10, 2))
     for i in range(1, 10, 2):
         temp = int(piva[i]) * 2
         s += temp if temp <= 9 else temp - 9
     check = (10 - s % 10) % 10
+    
     return check == int(piva[-1])
 
 def scrape_sito_aziendale(url, ragione_sociale=""):
