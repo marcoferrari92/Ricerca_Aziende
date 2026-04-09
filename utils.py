@@ -276,22 +276,24 @@ from openai import OpenAI
 
 def estrai_con_ai(testo, api_key):
     """
-    Usa GPT-4 per estrarre dati strutturati dal testo grezzo di DuckDuckGo.
+    Usa GPT-4 per estrarre dati strutturati, inclusa la P.IVA, 
+    mantenendo il testo originale per il log.
     """
     client = OpenAI(api_key=api_key)
     
     prompt = f"""
-    Analizza il seguente testo estratto da vari siti di database aziendali e recupera le informazioni richieste.
+    Analizza il seguente testo e recupera le informazioni richieste.
     
     TESTO:
     \"\"\"{testo}\"\"\"
     
     REGOLE DI ESTRAZIONE:
-    1. FATTURATO: Cerca il valore numerico più recente. Se trovi un range o un'annualità, riportali (es. "850.000€ (2022)").
-    2. DIPENDENTI: Indica il numero esatto o il range trovato (es. "6-9").
-    3. ATECO: Estrai il codice numerico (es. "25.11").
-    4. RAGIONE SOCIALE: Riporta il nome ufficiale trovato nel testo.
-    5. INDIRIZZO: Estrai l'indirizzo completo se presente.
+    1. FATTURATO: Valore numerico più recente (es. "1.2M€").
+    2. DIPENDENTI: Numero o range (es. "10-15").
+    3. ATECO: Codice numerico (es. "25.11").
+    4. RAGIONE SOCIALE: Nome ufficiale dell'azienda.
+    5. INDIRIZZO: Indirizzo completo.
+    6. PARTITA IVA: Cerca il numero di 11 cifre (es. "01234567890").
 
     RESTITUISCI ESCLUSIVAMENTE UN OGGETTO JSON:
     {{
@@ -299,13 +301,14 @@ def estrai_con_ai(testo, api_key):
         "dipendenti": "valore o N.D.",
         "ateco": "valore o N.D.",
         "ragione_sociale": "valore o N.D.",
-        "indirizzo": "valore o N.D."
+        "indirizzo": "valore o N.D.",
+        "partita_iva": "valore o N.D."
     }}
     """
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # Più veloce ed economico per estrazioni massive
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             response_format={ "type": "json_object" }
@@ -313,16 +316,24 @@ def estrai_con_ai(testo, api_key):
         
         dati = json.loads(response.choices[0].message.content)
         
-        # Restituiamo i campi principali e usiamo gli altri come nota di controllo
         f = dati.get("fatturato", "N.D.")
         d = dati.get("dipendenti", "N.D.")
-        # Creiamo una stringa di controllo per il log
-        info_extra = f"Sociale: {dati.get('ragione_sociale')} | Indirizzo: {dati.get('indirizzo')} | ATECO: {dati.get('ateco')}"
+        piva = dati.get("partita_iva", "N.D.")
         
-        return f, d, info_extra, testo
+        # Stringa di controllo con tutti i dati extra inclusa la P.IVA
+        info_extra = (
+            f"PIVA: {piva} | "
+            f"Sociale: {dati.get('ragione_sociale')} | "
+            f"ATECO: {dati.get('ateco')} | "
+            f"Indirizzo: {dati.get('indirizzo')}"
+        )
+        
+        # RESTITUIAMO 5 VALORI (Fatturato, Dipendenti, P.IVA, Info Extra, Testo Originale)
+        return f, d, piva, info_extra, testo
 
     except Exception as e:
-        return "Errore", "Errore", f"AI Exception: {str(e)}"
+        # Restituiamo 5 valori anche in caso di errore per non rompere l'unpacking in app.py
+        return "Errore", "Errore", "Errore", f"AI Exception: {str(e)}", testo
 
 
 
