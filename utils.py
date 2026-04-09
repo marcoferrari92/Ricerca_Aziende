@@ -300,12 +300,19 @@ def cerca_testo_online(ragione_sociale, max_retry=2):
 
 import requests
 from bs4 import BeautifulSoup
+import openai
 import time
+import json
 
+# Session globale
 session = requests.Session()
 session.headers.update({'User-Agent': 'Mozilla/5.0'})
 
+# 1️⃣ Funzione per cercare testo online
 def cerca_testo_online(ragione_sociale, max_retry=2):
+    """
+    Cerca testi relativi all'azienda su DuckDuckGo Lite
+    """
     query = ragione_sociale.replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
 
@@ -317,13 +324,7 @@ def cerca_testo_online(ragione_sociale, max_retry=2):
                 continue
 
             soup = BeautifulSoup(res.text, "html.parser")
-
-            risultati = []
-            for a in soup.find_all("a"):
-                txt = a.text.strip()
-                if len(txt) > 20:
-                    risultati.append(txt)
-
+            risultati = [a.text.strip() for a in soup.find_all("a") if len(a.text.strip()) > 20]
             return " ".join(risultati)
 
         except:
@@ -332,11 +333,40 @@ def cerca_testo_online(ragione_sociale, max_retry=2):
     return ""
 
 
-def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=2):
+# 2️⃣ Funzione per estrarre fatturato e dipendenti con AI
+def estrai_con_ai(testo, api_key):
+    """
+    Usa OpenAI per estrarre fatturato e numero dipendenti dal testo
+    """
+    openai.api_key = api_key
+    prompt = f"""
+    Estrai dal testo le informazioni finanziarie principali.
+    Testo: \"\"\"{testo}\"\"\"
+    Restituisci in formato JSON:
+    {{
+        "fatturato": "<valore numerico o N.D.>",
+        "dipendenti": "<numero o N.D.>"
+    }}
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        contenuto = response['choices'][0]['message']['content'].strip()
+        dati = json.loads(contenuto)
+        return dati.get("fatturato", "N.D."), dati.get("dipendenti", "N.D."), testo[:2000]
+    except Exception as e:
+        return "Errore", "Errore", f"AI exception: {str(e)}"
 
+
+# 3️⃣ Funzione principale
+def cerca_info_finanziarie_per_nome(ragione_sociale, api_key, max_retry=2):
+    """
+    Restituisce (fatturato, dipendenti, testo_estratto)
+    """
     testo = cerca_testo_online(ragione_sociale, max_retry)
-
     if not testo:
         return "N.D.", "N.D.", "Nessun testo trovato"
-
-    return estrai_info_finanziarie(ragione_sociale, testo, indirizzo)
+    return estrai_con_ai(testo, api_key)
