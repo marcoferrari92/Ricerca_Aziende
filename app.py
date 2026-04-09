@@ -78,18 +78,31 @@ with col_ctrl:
 # --- TABELLA RISULTATI E SCRAPING ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader(f"3. Database Comparativo ({len(st.session_state.results)} aziende)")
-    
-    # Prepariamo il DataFrame con tutte le colonne necessarie se non esistono
-    for c in ['Email (Crawler)', 'P.IVA (Crawler)', 'Email (AI)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)']:
-        if c not in st.session_state.results.columns:
-            st.session_state.results[c] = "N.D."
+    st.subheader("2. Database Aziende Trovate")
 
-    # Visualizzazione (escludiamo lat/lon e colonne tecniche)
-    view_cols = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
-    st.dataframe(st.session_state.results[view_cols].astype(object), use_container_width=True)
+    # Creiamo una copia per lo stile senza rovinare i dati originali
+    df_to_show = st.session_state.results.copy()
 
-    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    # Funzione per applicare il colore solo alla colonna specifica
+    def apply_color(x):
+        # Definiamo i due valori da confrontare
+        crawled = str(x['Partita IVA']).strip()
+        ai_found = str(x.get('PIVA AI', 'N.D.')).strip()
+        
+        # Colore base
+        style_match = 'background-color: #c3e6cb; color: #155724;' # Verde chiaro
+        style_error = 'background-color: #f5c6cb; color: #721c24;' # Rosso chiaro
+
+        if crawled != "Non trovata" and crawled == ai_found:
+            return [style_match if v == x['PIVA AI'] else '' for v in x]
+        else:
+            return [style_error if v == x['PIVA AI'] else '' for v in x]
+
+    # Visualizzazione con lo Styler
+    st.dataframe(
+        df_to_show.style.apply(apply_color, axis=1),
+        use_container_width=True
+    )
     
     # --- PULSANTE 1: CRAWLER WEB ---
     with btn_col1:
