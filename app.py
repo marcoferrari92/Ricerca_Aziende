@@ -111,41 +111,31 @@ if not st.session_state.results.empty:
                 st.rerun()
 
     with btn_col2:
-        # Ho rimosso il type="primary" per differenziarlo se non usa l'AI
-        if st.button("🔍 2. ESTRAI TESTO GREZZO", use_container_width=True):
+        if st.button("🤖 2. VEDI COSA VEDE IL BOT", use_container_width=True, type="primary"):
             st.session_state.debug_text_log = ""
-            st.session_state.summary_log = ""
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
             
-            t1, t2 = st.tabs(["📊 Stato", "🔍 Testo Estratto"])
-            with t1: sum_a = st.empty()
-            with t2: deb_a = st.empty()
+            # Contenitore per il log in tempo reale
+            with log_placeholder.expander("🔍 ISPEZIONE LIVE (Snippet DuckDuckGo)", expanded=True):
+                debug_area = st.empty()
 
-            for i, (idx, row) in enumerate(df_work.iterrows()):
-                nome = row['Ragione Sociale']
-                bar.progress((i + 1) / len(df_work), text=f"Scansione: {nome}")
-                
-                # --- CHIAMATA DIRETTA ALLA TUA FUNZIONE ---
-                # Dato che estrai_testo_finanziario restituisce solo il testo,
-                # assegniamo "N.D." a fatturato e dipendenti manualmente
-                txt = estrai_testo_finanziario(nome) 
-                f, d = "N.D.", "N.D." 
-                
-                # Aggiorniamo il dataframe
-                df_work.at[idx, 'testo_raw'] = txt
-                
-                # Aggiorniamo i log visivi
-                st.session_state.summary_log += f"✅ **{nome}** -> Testo recuperato\n\n"
-                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**CONTENUTO:**\n{txt}\n\n---\n"
-                
-                sum_a.markdown(st.session_state.summary_log)
-                deb_a.markdown(st.session_state.debug_text_log)
-                
-                # Pausa breve per evitare blocchi IP
-                time.sleep(random.uniform(1, 2))
+                for i, (idx, row) in enumerate(df_work.iterrows()):
+                    nome = row['Ragione Sociale']
+                    bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
+                    
+                    # --- CHIAMATA A VALORE SINGOLO ---
+                    testo_visto = cerca_info_finanziarie_per_nome(nome)
+                    
+                    # Salviamo nel log
+                    st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**IL BOT VEDE:** {testo_visto}\n\n---\n"
+                    
+                    # Mostriamo a video
+                    debug_area.markdown(st.session_state.debug_text_log)
+                    
+                    time.sleep(2)
 
             st.session_state.results = df_work
-            st.success("Testi estratti correttamente!")
-            st.rerun()
+            st.success("Scansione completata!")
+            # st.rerun() # Commentato per permetterti di leggere il log prima che la pagina si ricarichi
 
