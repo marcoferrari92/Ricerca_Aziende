@@ -119,82 +119,25 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
-# Funzione di styling corretta e severa
-    def apply_color(row):
-        # Recupero i valori puliti
-        crawled = str(row.get('P.IVA (Crawler)', 'N.D.')).strip()
-        ai_found = str(row.get('P.IVA (AI)', 'N.D.')).strip()
-        
-        # Inizializziamo stili vuoti per tutta la riga
-        styles = ['' for _ in row.index]
-        
-        try:
-            target_idx = row.index.get_loc('P.IVA (AI)')
-            
-            # CASO 1: L'AI non ha ancora girato (valore di default) -> Nessun colore
-            if ai_found == "N.D.":
-                styles[target_idx] = ''
-            
-            # CASO 2: MATCH PERFETTO -> VERDE
-            # Entrambi hanno lo stesso numero e non è un errore
-            elif crawled == ai_found and crawled not in ["Non trovata", "N.D."]:
-                styles[target_idx] = 'background-color: #c3e6cb; color: #155724; font-weight: bold;'
-            
-            # CASO 3: DISCREPANZA O N.D. AI -> ROSSO
-            # Se il crawler ha qualcosa e l'AI dice N.D., o se i numeri sono diversi
-            else:
-                styles[target_idx] = 'background-color: #f5c6cb; color: #721c24; font-weight: bold;'
-        except:
-            pass
-            
-        return styles
+def chiedi_a_openai(nome_azienda, piva_crawler, sito, api_key_openai):
+    if not api_key_openai:
+        return "N.D.", "N.D.", "N.D.", "Manca Key"
 
-
-from openai import OpenAI
-import json
-
-def ricerca_dati_ai(ragione_sociale, indirizzo, sito_web, piva_trovata, api_key):
-    """
-    Usa l'AI per validare la P.IVA e cercare di dedurre fatturato/dipendenti
-    basandosi sulla conoscenza del modello e sui dati forniti.
-    """
-    if not api_key:
-        return "N.D.", "N.D.", piva_trovata
-
-    client = OpenAI(api_key=api_key)
-    
-    prompt = f"""
-    Sei un analista finanziario. Dati i seguenti parametri di un'azienda italiana:
-    - Ragione Sociale: {ragione_sociale}
-    - Indirizzo: {indirizzo}
-    - Sito Web: {sito_web}
-    - P.IVA rilevata: {piva_trovata}
-
-    Il tuo compito è:
-    1. Confermare se la P.IVA è corretta per questa azienda.
-    2. Fornire una stima del fatturato annuo (ultimo dato disponibile).
-    3. Fornire il numero approssimativo di dipendenti.
-
-    Rispondi ESCLUSIVAMENTE in formato JSON con queste chiavi:
-    "piva_confermata", "fatturato", "dipendenti", "nota_affidabilita".
-    Se non conosci i dati, scrivi "N.D.".
-    """
+    client = OpenAI(api_key=api_key_openai)
+    # Ho aggiunto la richiesta esplicita della PIVA nel prompt
+    prompt = f"""Analista finanziario: trova fatturato 2023/24, dipendenti e conferma la Partita IVA per {nome_azienda}, sito {sito}. 
+    Il crawler ha rilevato questa P.IVA: {piva_crawler}.
+    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}. Se ignoto usa 'N.D.'."""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # Più economico per elaborazioni massive
-            messages=[{"role": "system", "content": "Rispondi solo in JSON."},
-                      {"role": "user", "content": prompt}],
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
             response_format={ "type": "json_object" }
         )
-        
-        dati = json.loads(response.choices[0].message.content)
-        return (
-            dati.get("fatturato", "N.D."),
-            dati.get("dipendenti", "N.D."),
-            dati.get("piva_confermata", piva_trovata)
-        )
+        data = json.loads(response.choices[0].message.content)
+        # Ritorna QUATTRO valori ora
+        return data.get("fatturato", "N.D."), data.get("dipendenti", "N.D."), data.get("piva", "N.D."), data.get("fonte", "N.D.")
     except Exception as e:
-        return "Errore AI", "Errore AI", piva_trovata
-
+        return "Errore AI", "N.D.", "N.D.", str(e)
 
