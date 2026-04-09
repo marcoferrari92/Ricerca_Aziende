@@ -78,73 +78,76 @@ with col_ctrl:
 # --- TABELLA RISULTATI E SCRAPING ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader(f"3. Gestione Risultati ({len(st.session_state.results)} aziende)")
+    st.subheader(f"3. Database Comparativo ({len(st.session_state.results)} aziende)")
     
-    view_cols = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
-    st.dataframe(st.session_state.results[view_cols], use_container_width=True)
+    # Prepariamo il DataFrame con tutte le colonne necessarie se non esistono
+    for c in ['Email (Crawler)', 'P.IVA (Crawler)', 'Email (AI)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)']:
+        if c not in st.session_state.results.columns:
+            st.session_state.results[c] = "N.D."
 
-    # Creiamo tre colonne per i pulsanti
+    # Visualizzazione (escludiamo lat/lon e colonne tecniche)
+    view_cols = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
+    st.dataframe(st.session_state.results[view_cols].astype(object), use_container_width=True)
+
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     
-    # --- PULSANTE 1: CRAWLER WEB (Email + P.IVA grezza) ---
+    # --- PULSANTE 1: CRAWLER WEB ---
     with btn_col1:
-        if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True, help="Estrae Email e P.IVA navigando il sito (Gratis)"):
+        if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy().astype(object)
             bar = st.progress(0)
             msg = st.empty()
             
             for i, (idx, row) in enumerate(df_work.iterrows()):
                 if row['Sito Web'] != 'N.D.':
-                    msg.text(f"Navigazione sito: {row['Ragione Sociale']}...")
+                    msg.text(f"Scraping Web: {row['Ragione Sociale']}...")
                     p_web, e_web = scrape_sito_aziendale(row['Sito Web'])
-                    df_work.at[idx, 'Partita IVA'] = str(p_web)
-                    df_work.at[idx, 'Email'] = str(e_web)
+                    
+                    # Scriviamo SOLO nelle colonne (Crawler)
+                    df_work.at[idx, 'P.IVA (Crawler)'] = str(p_web)
+                    df_work.at[idx, 'Email (Crawler)'] = str(e_web)
                 bar.progress((i + 1) / len(df_work))
             
             st.session_state.results = df_work
-            msg.success("✅ Web Scraping completato!")
+            msg.success("✅ Dati Crawler salvati!")
             st.rerun()
 
-    # --- PULSANTE 2: ANALISI AI (Fatturato + Conferma) ---
+    # --- PULSANTE 2: ANALISI AI ---
     with btn_col2:
-        if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary", help="Usa OpenAI per Fatturato, Dipendenti e validazione P.IVA"):
+        if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
             if not openai_api_key:
-                st.error("Inserisci la OpenAI Key nella sidebar!")
+                st.error("Inserisci la OpenAI Key!")
             else:
                 df_work = st.session_state.results.copy().astype(object)
                 bar = st.progress(0)
                 msg = st.empty()
                 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
-                    msg.text(f"Elaborazione AI: {row['Ragione Sociale']}...")
+                    msg.text(f"Analisi AI: {row['Ragione Sociale']}...")
                     
-                    # Usa la funzione AI passando i dati già raccolti dal crawler (se presenti)
-                    fatt, dip, p_final = ricerca_dati_ai(
+                    # Passiamo all'AI i dati trovati dal crawler come "suggerimento"
+                    fatt, dip, p_ai = ricerca_dati_ai(
                         row['Ragione Sociale'], 
                         row['Indirizzo'], 
                         row['Sito Web'], 
-                        row.get('Partita IVA', 'N.D.'), 
+                        row['P.IVA (Crawler)'], # Usiamo il dato del crawler per aiutarlo
                         openai_api_key
                     )
                     
-                    df_work.at[idx, 'Fatturato'] = str(fatt)
-                    df_work.at[idx, 'Dipendenti'] = str(dip)
-                    df_work.at[idx, 'Partita IVA'] = str(p_final)
+                    # Qui dovresti avere una funzione AI che cerca anche l'email se vuoi Email (AI)
+                    # Per ora popoliamo IVA, Fatturato e Dipendenti
+                    df_work.at[idx, 'P.IVA (AI)'] = str(p_ai)
+                    df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
+                    df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
                     
                     bar.progress((i + 1) / len(df_work))
                 
                 st.session_state.results = df_work
-                msg.success("✅ Analisi AI completata!")
+                msg.success("✅ Dati AI salvati in colonne separate!")
                 st.rerun()
 
     # --- PULSANTE 3: DOWNLOAD ---
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button(
-            "📥 SCARICA DATABASE CSV", 
-            data=csv, 
-            file_name="leads_aziende.csv", 
-            mime="text/csv", 
-            use_container_width=True
-        )
+        st.download_button("📥 SCARICA DATABASE", csv, "aziende_comparate.csv", "text/csv", use_container_width=True)
         
