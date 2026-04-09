@@ -119,6 +119,21 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
+def style_piva_comparison(row):
+    """
+    Funzione per colorare la cella in base al match tra Crawler e AI.
+    """
+    piva_crawler = str(row.get('Partita IVA', '')).strip()
+    # Supponiamo che la colonna dell'AI si chiami 'PIVA AI'
+    piva_ai = str(row.get('PIVA AI', '')).strip()
+    
+    # Se sono uguali e valide
+    if piva_crawler == piva_ai and piva_crawler not in ['N.D.', 'Non trovata', '']:
+        return ['background-color: #d4edda; color: #155724'] * len(row) # Verde
+    # Se sono diverse o non trovate
+    else:
+        return ['background-color: #f8d7da; color: #721c24'] * len(row) # Rosso
+
 
 from openai import OpenAI
 import json
