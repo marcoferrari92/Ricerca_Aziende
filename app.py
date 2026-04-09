@@ -70,6 +70,7 @@ with col_map:
 with col_ctrl:
     st.subheader("2. Comandi Ricerca")
     st.info(f"📍 Centro: {st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}")
+    
     if st.button("🚀 AVVIA RICERCA GOOGLE", use_container_width=True, type="primary"):
         if not user_api_key or not scelte:
             st.warning("Inserisci API Key e seleziona un settore")
@@ -77,11 +78,27 @@ with col_ctrl:
             keywords = []
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
+                # 1. Recupero dati base da Google
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
-                for col in ['P.IVA (Crawler)', 'Email (Crawler)', 'Fatturato (AI)', 'Dipendenti (AI)', 'testo_raw']:
-                    df[col] = "N.D."
+                
+                # 2. CREAZIONE DELLE COLONNE VUOTE (Qui aggiungiamo quelle per lo stile)
+                # Definiamo tutte le colonne che vogliamo vedere nella tabella colorata
+                colonne_estetiche = [
+                    'Email (Crawler)', 'P.IVA (Crawler)',           # Gialle
+                    'P.IVA (AI)', 'Fatturato (AI)',                 # Blu
+                    'Dipendenti (AI)', 'ATECO (AI)', 
+                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 
+                    'Nota/Fonte (AI)', 'testo_raw'
+                ]
+                
+                for col in colonne_estetiche:
+                    if col not in df.columns:
+                        df[col] = "N.D."
+                
+                # 3. Salvataggio
                 st.session_state.results = df
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
+            
             st.rerun()
 
 
