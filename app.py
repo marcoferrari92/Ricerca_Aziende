@@ -127,15 +127,16 @@ if not st.session_state.results.empty:
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
                     bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
-                    
-                    # RICEVIAMO 4 VALORI
-                    # In app.py sotto il Bottone 2:
-                    f, d, piva, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
 
-                    # Salvataggio nel DataFrame
+                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+
+                    # Salvataggio nelle colonne specifiche
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
-                    df_work.at[idx, 'P.IVA (AI)'] = piva # Assicurati che questa colonna esista
+                    df_work.at[idx, 'P.IVA (AI)'] = piva
+                    df_work.at[idx, 'Indirizzo (AI)'] = ind_ai
+                    df_work.at[idx, 'ATECO (AI)'] = ateco_ai
+                    df_work.at[idx, 'Ragione Sociale (AI)'] = rag_ai
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
