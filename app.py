@@ -144,6 +144,7 @@ if not st.session_state.results.empty:
                             row.get('testo_raw', ''), # <--- TESTO SCARICATO DAL CRAWLER
                             openai_api_key
                         )
+                        st.write(f"DEBUG {current_name}: AI ha risposto {piva_ai}")
                         
                         df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
                         df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
