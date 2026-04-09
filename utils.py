@@ -229,45 +229,45 @@ session.headers.update({
 
 def cerca_testo_online(ragione_sociale):
     """
-    Cerca su DuckDuckGo e marca ogni snippet con il nome del sito di origine.
+    Restituisce SOLO il testo visto dal bot.
+    Pulisce il nome e gestisce il blocco 202.
     """
+    # 1. Pulizia Nome: prendiamo solo le prime 3-4 parole 
+    # (Toglie robe tipo "Srl è l'azienda specializzata dal 1945...")
     nome_pulito = " ".join(ragione_sociale.split()[:4])
-    query = f"{nome_pulito} fatturatoitalia ufficiocamerale".replace(" ", "+")
+    
+    query = f"{nome_pulito} fatturatoitalia".replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://www.google.com/'
     }
 
     try:
+        # PAUSA OBBLIGATORIA: Più è lunga, meno probabilità di Errore 202
         time.sleep(random.uniform(6, 12)) 
+        
         res = session.get(url, headers=headers, timeout=15)
+        
         if res.status_code != 200:
-            return f"Errore {res.status_code}"
+            return f"BLOCCO SERVER (Codice {res.status_code}): Riprova tra poco o aumenta il tempo di attesa."
 
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Cerchiamo i contenitori dei risultati
-        results = soup.find_all("table", class_="result-table")
-        testi_con_fonte = []
+        # Estraiamo gli snippet
+        snippets = soup.find_all("td", class_="result-snippet")
+        
+        if snippets:
+            testo_visto = " | ".join([s.get_text(strip=True) for s in snippets])
+        else:
+            # Fallback se la struttura cambia leggermente
+            testo_visto = " ".join([a.get_text() for a in soup.find_all("a") if len(a.get_text()) > 25])
 
-        for res_table in results:
-            # Troviamo il link per capire il sito
-            link_tag = res_table.find("a", class_="result-link")
-            snippet_tag = res_table.find("td", class_="result-snippet")
-            
-            if link_tag and snippet_tag:
-                url_sito = link_tag.get("href", "")
-                dominio = urlparse(url_sito).netloc.replace("www.", "")
-                testo = snippet_tag.get_text(strip=True)
-                
-                # Attacchiamo il nome del sito all'inizio dello snippet
-                testi_con_fonte.append(f"[SITO: {dominio}] {testo}")
-
-        return " | ".join(testi_con_fonte) if testi_con_fonte else "Nessun risultato."
+        return testo_visto if testo_visto.strip() else "Pagina vuota: DuckDuckGo non ha trovato risultati per questa query."
 
     except Exception as e:
-        return f"Eccezione: {str(e)}"
+        return f"Eccezione tecnica: {str(e)}"
 
 
 # --- 5. ESTRAZIONE AI ---
