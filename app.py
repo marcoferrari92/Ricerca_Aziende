@@ -97,21 +97,20 @@ if not st.session_state.results.empty:
     log_placeholder = st.empty()
 
     with btn_col1:
-        if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
+        if st.button("🌐 1. AVVIA CRAWLER WEB"):
             df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0, text="Inizializzazione Crawler...")
-            
-            for i, (idx, row) in enumerate(df_work.iterrows()):
-                status_text = f"🌐 Scraping: {row['Ragione Sociale']} ({i+1}/{len(df_work)})"
-                bar.progress((i + 1) / len(df_work), text=status_text)
-                
-                if row['Sito Web'] != 'N.D.':
-                    p_web, e_web = scrape_sito_aziendale(row['Sito Web'])
-                    df_work.at[idx, 'P.IVA (Crawler)'] = str(p_web)
-                    df_work.at[idx, 'Email (Crawler)'] = str(e_web)
-            
-            st.session_state.results = df_work
-            st.rerun()
+            # Aggiungiamo una colonna nascosta per il testo
+            if 'testo_raw' not in df_work.columns:
+                df_work['testo_raw'] = ""
+        
+                for i, (idx, row) in enumerate(df_work.iterrows()):
+                    p_web, e_web, testo_web = scrape_sito_aziendale(row['Sito Web'])
+                    df_work.at[idx, 'P.IVA (Crawler)'] = p_web
+                    df_work.at[idx, 'Email (Crawler)'] = e_web
+                    df_work.at[idx, 'testo_raw'] = testo_web # Salviamo il testo per l'AI
+    
+        st.session_state.results = df_work
+        st.rerun()
 
     with btn_col2:
         if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
