@@ -335,3 +335,13 @@ def estrai_con_ai(testo, api_key):
     except Exception as e:
         return "Errore", "Errore", "Errore", "Errore", "Errore", "Errore", f"AI Error: {str(e)}", testo
 
+
+def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
+    """
+    IMPORTANTE: Questa funzione DEVE chiamarsi così per app.py
+    """
+    testo_grezzo = cerca_testo_online(ragione_sociale)
+    if not testo_grezzo or "Errore" in testo_grezzo:
+        return "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "Ricerca fallita", testo_grezzo
+    return estrai_con_ai(testo_grezzo, api_key)
+
