@@ -135,45 +135,37 @@ if not st.session_state.results.empty:
                 # Nota: NON chiamare st.rerun() qui se vuoi che l'expander resti aperto con i dati correnti
     
     with btn_col2:
-        if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
-            if not openai_api_key:
-                st.error("Inserisci la OpenAI Key!")
-            elif st.session_state.results.empty:
-                st.warning("Esegui prima la ricerca su Google!")
-            else:
-                df_work = st.session_state.results.copy()
-                bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
-            
-                # Expander per vedere cosa sta facendo l'AI in tempo reale
-                with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
-                    log_container = st.empty()
-                    history = []
+        if st.button("🤖 2. RICERCA FATTURATI AUTOMATICA", use_container_width=True, type="primary"):
+            df_work = st.session_state.results.copy()
+            bar = progress_placeholder.progress(0)
+        
+            with log_placeholder.expander("📊 Log Ricerca Finanziaria", expanded=True):
+                log_area = st.empty()
+                log_history = ""
 
-                    for i, (idx, row) in enumerate(df_work.iterrows()):
-                        current_name = row['Ragione Sociale']
-                        bar.progress((i + 1) / len(df_work), text=f"🤖 AI analizza: {current_name}")
-                    
-                        fatt, dip, piva_ai, fonte = chiedi_a_openai(
-                            current_name, 
-                            row.get('P.IVA (Crawler)', 'Non trovata'), 
-                            row.get('Sito Web', 'N.D.'), 
-                            row.get('Indirizzo', 'N.D.'),
-                            row.get('testo_raw', ''),
-                            openai_api_key
-                        )
-                    
-                        # Aggiornamento DataFrame
-                        df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
-                        df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
-                        df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
-                        df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
-                    
-                        # Update Log visivo
-                        history.append(f"✅ **{current_name}** | P.IVA: {piva_ai} | Fatt: {fatt} | Fonte: {fonte}")
-                        log_container.markdown("\n\n".join(history[-5:]))
+                for i, (idx, row) in enumerate(df_work.iterrows()):
+                    piva = row.get('P.IVA (Crawler)', 'Non trovata')
+                
+                    # Chiamata alla nuova funzione
+                    fatt, dip, snippet = cerca_info_finanziarie_anteprima(piva)
+                
+                    # Salvataggio nel DataFrame
+                    df_work.at[idx, 'Fatturato (AI)'] = fatt
+                    df_work.at[idx, 'Dipendenti (AI)'] = dip
+                    df_work.at[idx, 'Nota/Fonte (AI)'] = "Google Snippet"
+                
+                    # Log a video per vedere se sta leggendo bene
+                    log_history += f"**{row['Ragione Sociale']}** (P.IVA: {piva})\n- Fatturato: {fatt}\n- Dipendenti: {dip}\n---\n"
+                    log_area.markdown(log_history)
+                
+                    bar.progress((i + 1) / len(df_work))
+                
+                    # IMPORTANTE: Pausa tra le ricerche per non farsi bloccare da Google
+                    time.sleep(3) 
 
                 st.session_state.results = df_work
-                st.success("Analisi AI Completata!")
+                st.session_state.crawler_log += "\n\n--- RICERCA FATTURATI COMPLETATA ---"
+                st.success("Analisi completata!")
                 st.rerun()
 
     with btn_col3:
