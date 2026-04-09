@@ -220,8 +220,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
-    # Puliamo il nome da eventuali caratteri speciali per la URL
-    query_string = f"{ragione_sociale} {indirizzo} fatturato dipendenti".replace(" ", "+")
+    query_string = f"{ragione_sociale} fatturato"
     query_url = f"https://www.google.com/search?q={query_string}"
     
     headers = {
@@ -231,31 +230,33 @@ def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
     try:
         res = requests.get(query_url, headers=headers, timeout=10)
         if res.status_code != 200:
-            return "Errore connessione", "Errore connessione", "Google ha bloccato la richiesta"
+            return "Errore", "Errore", f"ERRORE HTTP {res.status_code}: Google ha bloccato il bot."
 
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # Prendiamo tutto il testo della pagina per l'analisi (inclusi gli snippet AI)
-        testo_completo = soup.get_text(separator=' ', strip=True)
+        # Estraiamo il testo pulendo i tag inutili per il debug
+        for script_or_style in soup(["script", "style", "header", "footer", "nav"]):
+            script_or_style.decompose()
 
-        # REGEX POTENZIATE (basate su quello che vediamo nello screenshot)
-        # Cerca formati come: "€ 479.292", "479.292 euro", "Fatturato 2024: € 479.292"
+        # Testo normalizzato (rimuove doppi spazi e tab)
+        testo_completo = " ".join(soup.get_text(separator=' ').split())
+
+        # Le tue Regex attuali
         regex_fatturato = r'(?i)(?:Fatturato|€)\s*[:\s-]{0,3}([\d\.]+)\s?(?:€|euro|milioni|mln)?'
-        # Cerca formati come: "Dipendenti: 5", "5 dipendenti"
         regex_dipendenti = r'(?i)(?:Dipendenti|personale)\s*[:\s-]{0,3}(\d+)'
 
-        # Cerchiamo i match
         fatt_match = re.search(regex_fatturato, testo_completo)
         dip_match = re.search(regex_dipendenti, testo_completo)
 
         val_fatt = fatt_match.group(1) if fatt_match else "N.D."
         val_dip = dip_match.group(1) if dip_match else "N.D."
         
-        # Aggiungiamo il simbolo € se è un numero puro
         if val_fatt != "N.D." and "€" not in val_fatt:
             val_fatt = f"€ {val_fatt}"
 
-        return val_fatt, val_dip, testo_completo[:500]
+        # RESTITUIAMO 2000 CARATTERI: i primi 500 sono spesso inutili, il succo è dopo
+        return val_fatt, val_dip, testo_completo[:2000]
 
     except Exception as e:
-        return "Errore", "Errore", str(e)
+        return "Errore", "Errore", f"ECCEZIONE: {str(e)}"
+
