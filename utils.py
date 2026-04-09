@@ -6,6 +6,8 @@ import time
 import googlemaps
 from bs4 import BeautifulSoup
 import urllib3
+import json              
+from openai import OpenAI
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
