@@ -117,49 +117,49 @@ if not st.session_state.results.empty:
             st.session_state.results = df_work
             st.rerun()
 
-   with btn_col2:
-    if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
-        if not openai_api_key:
-            st.error("Inserisci la OpenAI Key!")
-        elif st.session_state.results.empty:
-            st.warning("Esegui prima la ricerca su Google!")
-        else:
-            df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
+       with btn_col2:
+            if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
+                if not openai_api_key:
+                    st.error("Inserisci la OpenAI Key!")
+                elif st.session_state.results.empty:
+                    st.warning("Esegui prima la ricerca su Google!")
+            else:
+                df_work = st.session_state.results.copy()
+                bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
             
-            # Expander per vedere cosa sta facendo l'AI in tempo reale
-            with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
-                log_container = st.empty()
-                history = []
+                # Expander per vedere cosa sta facendo l'AI in tempo reale
+                with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
+                    log_container = st.empty()
+                    history = []
 
-                for i, (idx, row) in enumerate(df_work.iterrows()):
-                    current_name = row['Ragione Sociale']
-                    bar.progress((i + 1) / len(df_work), text=f"🤖 AI analizza: {current_name}")
+                    for i, (idx, row) in enumerate(df_work.iterrows()):
+                        current_name = row['Ragione Sociale']
+                        bar.progress((i + 1) / len(df_work), text=f"🤖 AI analizza: {current_name}")
                     
-                    # Chiamata alla funzione aggiornata in utils.py
-                    # Passiamo il 'testo_raw' che il crawler ha salvato nel passo precedente
-                    fatt, dip, piva_ai, fonte = chiedi_a_openai(
+                        # Chiamata alla funzione aggiornata in utils.py
+                        # Passiamo il 'testo_raw' che il crawler ha salvato nel passo precedente
+                        fatt, dip, piva_ai, fonte = chiedi_a_openai(
                         current_name, 
                         row.get('P.IVA (Crawler)', 'Non trovata'), 
                         row.get('Sito Web', 'N.D.'), 
                         row.get('Indirizzo', 'N.D.'),
                         row.get('testo_raw', ''), # Questo viene dal modulo crawler
                         openai_api_key
-                    )
+                        )
                     
-                    # Aggiornamento DataFrame
-                    df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
-                    df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
-                    df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
-                    df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
+                        # Aggiornamento DataFrame
+                        df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
+                        df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
+                        df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
+                        df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
                     
-                    # Update Log visivo
-                    history.append(f"✅ **{current_name}** | P.IVA: {piva_ai} | Fatt: {fatt} | Fonte: {fonte}")
-                    log_container.markdown("\n\n".join(history[-5:])) # Mostra gli ultimi 5
+                        # Update Log visivo
+                        history.append(f"✅ **{current_name}** | P.IVA: {piva_ai} | Fatt: {fatt} | Fonte: {fonte}")
+                        log_container.markdown("\n\n".join(history[-5:])) # Mostra gli ultimi 5
 
-                st.session_state.results = df_work
-                st.success("Analisi AI Completata!")
-                st.rerun()
+            st.session_state.results = df_work
+            st.success("Analisi AI Completata!")
+            st.rerun()
 
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
