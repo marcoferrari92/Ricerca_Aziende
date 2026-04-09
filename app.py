@@ -3,6 +3,7 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import urllib3
+import time
 
 # Disabilita avvisi SSL per evitare log fastidiosi
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
