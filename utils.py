@@ -166,6 +166,17 @@ def scrape_sito_aziendale(url):
                         piva_f = found
 
             # =========================
+            # 🔍 4. CERCA SOLO FOOTER
+            # =========================
+            if piva_f == "Non trovata":
+                footer = soup.find('footer')
+                if footer:
+                    footer_text = footer.get_text(" ", strip=True)
+                    found = cerca_piva(footer_text)
+                    if found:
+                        piva_f = found
+                        
+            # =========================
             # 📧 EMAIL
             # =========================
             if email_f == "Non trovata":
