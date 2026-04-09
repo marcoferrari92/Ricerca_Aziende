@@ -129,7 +129,7 @@ if not st.session_state.results.empty:
                 # --- CHIAMATA DIRETTA ALLA TUA FUNZIONE ---
                 # Dato che estrai_testo_finanziario restituisce solo il testo,
                 # assegniamo "N.D." a fatturato e dipendenti manualmente
-                txt = cerca_info_finanziarie_per_nome(nome, "") 
+                txt = estrai_testo_finanziario(nome, "") 
                 f, d = "N.D.", "N.D." 
                 
                 # Aggiorniamo il dataframe
