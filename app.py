@@ -4,12 +4,12 @@ import folium
 from streamlit_folium import st_folium
 import urllib3
 
-# Disabilita avvisi SSL
+# Disabilita avvisi SSL per evitare log fastidiosi
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import dei moduli locali
+# Import dei moduli locali (Assicurati che utils.py contenga fetch_data_google, scrape_sito_aziendale, chiedi_a_openai)
 from mapping import ATECO_MAP 
-from utils import fetch_data_google, scrape_sito_aziendale, ricerca_dati_ai
+from utils import fetch_data_google, scrape_sito_aziendale, chiedi_a_openai
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor Pro", page_icon="🏭")
@@ -20,11 +20,11 @@ if 'pos' not in st.session_state:
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
 
-# --- SIDEBAR ---
+# --- SIDEBAR: CONFIGURAZIONE ---
 with st.sidebar:
     st.header("🔑 Accesso API")
     user_api_key = st.text_input("Google API Key", type="password")
-    openai_api_key = st.text_input("OpenAI API Key", type="password", help="Per conferma P.IVA e Dati Finanziari")
+    openai_api_key = st.text_input("OpenAI API Key", type="password", help="Per P.IVA, Fatturato e Dipendenti")
     
     st.divider()
     st.header("⚙️ Parametri")
@@ -59,7 +59,7 @@ with col_map:
         st.rerun()
 
 with col_ctrl:
-    st.subheader("2. Comandi")
+    st.subheader("2. Comandi Ricerca")
     st.info(f"📍 Centro: {st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}")
     if st.button("🚀 AVVIA RICERCA GOOGLE", use_container_width=True, type="primary"):
         if not user_api_key: st.error("Inserisci la Google API Key")
@@ -69,55 +69,26 @@ with col_ctrl:
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
-                # Inizializziamo le colonne vuote per evitare errori di key
-                for col in ['P.IVA (Crawler)', 'Email (Crawler)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)']:
+                
+                # Inizializziamo le colonne vuote per evitare errori di visualizzazione
+                cols_to_add = ['P.IVA (Crawler)', 'Email (Crawler)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'Nota/Fonte (AI)']
+                for col in cols_to_add:
                     df[col] = "N.D."
+                
                 st.session_state.results = df
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             st.rerun()
 
-# --- TABELLA RISULTATI ---
+# --- TABELLA RISULTATI E ARRICCHIMENTO ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader("2. Database Aziende Trovate")
-
-    # Funzione di styling per il confronto P.IVA
-    def apply_color(row):
-        # Prendiamo i valori dalle colonne corrette
-        crawled = str(row.get('P.IVA (Crawler)', 'N.D.')).strip()
-        ai_found = str(row.get('P.IVA (AI)', 'N.D.')).strip()
-        
-        # Inizializziamo stili vuoti per tutte le celle della riga
-        styles = ['' for _ in row.index]
-        
-        # Troviamo l'indice della colonna 'P.IVA (AI)'
-        try:
-            target_idx = row.index.get_loc('P.IVA (AI)')
-            
-            # Se l'AI non ha ancora lavorato, non coloriamo
-            if ai_found == "N.D.":
-                styles[target_idx] = ''
-            # Se coincidono e non sono "Non trovata" o "N.D." -> VERDE
-            elif crawled != "Non trovata" and crawled != "N.D." and crawled == ai_found:
-                styles[target_idx] = 'background-color: #c3e6cb; color: #155724; font-weight: bold;'
-            # Se differiscono o non trovati -> ROSSO
-            else:
-                styles[target_idx] = 'background-color: #f5c6cb; color: #721c24; font-weight: bold;'
-        except:
-            pass
-            
-        return styles
-
-    # Mostriamo il dataframe stilizzato
-    st.dataframe(
-        st.session_state.results.style.apply(apply_color, axis=1),
-        use_container_width=True
-    )
+    st.subheader("3. Database Risultati")
     
-    # --- COLONNE PER PULSANTI ---
+    # Tabella pulita senza stili CSS/Colori
+    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), use_container_width=True)
+    
     btn_col1, btn_col2, btn_col3 = st.columns(3)
 
-    # --- PULSANTE 1: CRAWLER WEB ---
     with btn_col1:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
@@ -133,10 +104,9 @@ if not st.session_state.results.empty:
                 bar.progress((i + 1) / len(df_work))
             
             st.session_state.results = df_work
-            msg.success("✅ Dati Crawler salvati!")
+            msg.success("✅ Dati Crawler completati!")
             st.rerun()
 
-    # --- PULSANTE 2: ANALISI AI ---
     with btn_col2:
         if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
             if not openai_api_key:
@@ -148,23 +118,29 @@ if not st.session_state.results.empty:
                 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     msg.text(f"AI Audit: {row['Ragione Sociale']}...")
-                    fatt, dip, p_ai = ricerca_dati_ai(
+                    
+                    # Chiamata alla tua funzione che restituisce 4 valori
+                    # (Assicurati che utils.py sia aggiornato per ritornare anche piva_ai)
+                    fatt, dip, piva_ai, fonte = chiedi_a_openai(
                         row['Ragione Sociale'], 
-                        row['Indirizzo'], 
-                        row['Sito Web'], 
                         row['P.IVA (Crawler)'], 
+                        row['Sito Web'], 
                         openai_api_key
                     )
-                    df_work.at[idx, 'P.IVA (AI)'] = str(p_ai)
+                    
+                    # Assegnazione alle colonne AI
                     df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
                     df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
+                    df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
+                    df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
+                    
                     bar.progress((i + 1) / len(df_work))
                 
                 st.session_state.results = df_work
                 msg.success("✅ Analisi AI completata!")
                 st.rerun()
 
-    # --- PULSANTE 3: DOWNLOAD ---
     with btn_col3:
+        # Download finale del CSV
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA DATABASE", csv, "leads_aziende.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 SCARICA DATABASE CSV", csv, "aziende_export.csv", "text/csv", use_container_width=True)
