@@ -134,41 +134,46 @@ if not st.session_state.results.empty:
                 st.success("✅ Crawler completato!")
                 # Nota: NON chiamare st.rerun() qui se vuoi che l'expander resti aperto con i dati correnti
     
-    with btn_col2:
-        if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
-            df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0)
+          with btn_col2:
+            if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
+                df_work = st.session_state.results.copy()
+                bar = progress_placeholder.progress(0)
         
-            with log_placeholder.expander("📊 Analisi Snippet Google", expanded=True):
-                log_area = st.empty()
-                history = ""
+                with log_placeholder.expander("📊 ISPEZIONE TESTO GOOGLE (Debug)", expanded=True):
+                    log_area = st.empty()
+                    # Usiamo lo session_state per non far sparire il log
+                    if 'debug_text_log' not in st.session_state:
+                        st.session_state.debug_text_log = ""
 
-                for i, (idx, row) in enumerate(df_work.iterrows()):
-                    nome = row['Ragione Sociale']
-                    indirizzo = row.get('Indirizzo', '')
+                    for i, (idx, row) in enumerate(df_work.iterrows()):
+                        nome = row['Ragione Sociale']
+                        indirizzo = row.get('Indirizzo', '')
                 
-                    bar.progress((i + 1) / len(df_work), text=f"Analisi: {nome}")
+                        bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
                 
-                    fatt, dip, snippet = cerca_info_finanziarie_per_nome(nome, indirizzo)
+                        fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, indirizzo)
                 
-                    df_work.at[idx, 'Fatturato (AI)'] = fatt
-                    df_work.at[idx, 'Dipendenti (AI)'] = dip
-                    df_work.at[idx, 'Nota/Fonte (AI)'] = "Google Overview/Snippet"
+                        df_work.at[idx, 'Fatturato (AI)'] = fatt
+                        df_work.at[idx, 'Dipendenti (AI)'] = dip
                 
-                    history += f"✅ **{nome}** -> Fatt: {fatt} | Dip: {dip}\n\n"
-                    log_area.markdown(history)
+                        # Aggiungiamo al log visibile
+                        st.session_state.debug_text_log += f"""
+                        **AZIENDA:** {nome}
+                        **RISULTATO:** Fatt: {fatt} | Dip: {dip}
+                        **COSA VEDE IL BOT (Snippet):** > {testo_estratto}...
                 
-                    time.sleep(4) 
-                    with log_area:
-                        st.markdown(f"### 🔍 Ispezione: {nome}")
-                        st.write(f"**Trovato:** Fatt: {fatt} | Dip: {dip}")
-                        st.text_area("Testo visto dal bot:", value=snippet, height=200)
-                        st.divider()
+                        ---
+                        """
+                        log_area.markdown(st.session_state.debug_text_log)
+                
+                        time.sleep(4) 
 
-                # Queste righe sono indentate come il "for", quindi partono quando il for ha finito
-                st.session_state.results = df_work
-                st.success("Analisi completata con successo!")
-                st.rerun() # <--- FA RICARICARE LA PAGINA PER MOSTRARE I DATI NELLA TABELLA
+                        st.session_state.results = df_work
+                        st.rerun()
+ 
+                    st.session_state.results = df_work
+                    st.success("Analisi completata con successo!")
+                    st.rerun() 
 
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
