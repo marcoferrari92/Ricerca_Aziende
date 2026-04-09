@@ -251,65 +251,67 @@ session.headers.update({
     'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
 })
 
-def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
-    """
-    Restituisce:
-    (valore_fatturato, numero_dipendenti, testo_estratto)
-    """
-    # 1️⃣ Costruisci query mirata su DuckDuckGo Lite (solo per link)
-    query_string = f"{ragione_sociale} site:aziende.it"
-    query_url = f"https://lite.duckduckgo.com/lite/?q={query_string.replace(' ', '+')}"
+import requests
+from bs4 import BeautifulSoup
+import re
+import time
 
-    testo_estratto = ""
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0'
+})
+
+def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
+
+    def estrai_dati(testo):
+        regex_fatturato = r'(?i)(fatturato|ricavi)[^\d]{0,20}([\d\.,]+)'
+        regex_dip = r'(?i)(dipendenti|personale)[^\d]{0,20}(\d+)'
+
+        fatt = re.search(regex_fatturato, testo)
+        dip = re.search(regex_dip, testo)
+
+        val_fatt = f"€ {fatt.group(2)}" if fatt else "N.D."
+        val_dip = dip.group(2) if dip else "N.D."
+
+        return val_fatt, val_dip
+
     for attempt in range(max_retry):
         try:
-            res = session.get(query_url, timeout=15)
-            if res.status_code != 200:
-                time.sleep(1 + attempt)  # backoff esponenziale
-                continue
+            # 1️⃣ Tentativo aziende.it
+            slug = ragione_sociale.lower().replace(" ", "-").replace(".", "")
+            url = f"https://www.aziende.it/{slug}"
 
-            soup = BeautifulSoup(res.text, 'html.parser')
+            res = session.get(url, timeout=10)
 
-            # 2️⃣ Estrai il primo link affidabile verso aziende.it
-            link = None
-            for a in soup.find_all('a'):
-                href = a.get('href', '')
-                if "aziende.it" in href:
-                    link = href
-                    break
+            if res.status_code == 200 and len(res.text) > 3000:
+                soup = BeautifulSoup(res.text, "html.parser")
+                testo = soup.get_text(" ", strip=True)
 
-            if not link:
-                testo_estratto = "Nessun link affidabile trovato"
-                continue
+                fatt, dip = estrai_dati(testo)
+                return fatt, dip, testo[:2000]
 
-            # 3️⃣ Scarica contenuto della pagina azienda
-            res2 = session.get(link, timeout=10)
-            if res2.status_code != 200:
-                testo_estratto = f"Pagina azienda non accessibile (HTTP {res2.status_code})"
-                continue
+            # 2️⃣ Fallback DuckDuckGo (generico)
+            query = ragione_sociale.replace(" ", "+")
+            search_url = f"https://lite.duckduckgo.com/lite/?q={query}"
 
-            soup2 = BeautifulSoup(res2.text, 'html.parser')
-            testo_estratto = soup2.get_text(" ", strip=True)[:5000]
+            res = session.get(search_url, timeout=10)
 
-            # 4️⃣ Estrazione dati con regex
-            regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a|ricavi)[^\d]{0,20}([\d\.,]+)'
-            regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)[^\d]{0,20}(\d+)'
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
 
-            fatt_match = re.search(regex_fatturato, testo_estratto)
-            dip_match = re.search(regex_dipendenti, testo_estratto)
+                risultati = []
+                for a in soup.find_all("a"):
+                    txt = a.text.strip()
+                    if len(txt) > 20:
+                        risultati.append(txt)
 
-            val_fatt = fatt_match.group(1).strip() if fatt_match else "N.D."
-            val_dip = dip_match.group(1).strip() if dip_match else "N.D."
+                testo = " ".join(risultati)
 
-            if val_fatt != "N.D." and "€" not in val_fatt.lower():
-                val_fatt = f"€ {val_fatt}"
+                fatt, dip = estrai_dati(testo)
 
-            # 5️⃣ Restituisce esattamente la tupla prevista
-            return val_fatt, val_dip, testo_estratto[:2000]
+                return fatt, dip, testo[:2000]
 
         except Exception as e:
-            testo_estratto = f"Eccezione: {str(e)}"
             time.sleep(1 + attempt)
 
-    # 6️⃣ Se tutti i retry falliscono
-    return "Errore", "Errore", f"Impossibile recuperare dati: {testo_estratto}"
+    return "N.D.", "N.D.", "Nessuna informazione trovata"
