@@ -6,10 +6,10 @@ import urllib3
 import time
 import random
 
-# Disabilita avvisi SSL per evitare log fastidiosi
+# Disabilita avvisi SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import dei moduli locali
+# Import moduli locali
 from mapping import ATECO_MAP 
 from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_per_nome
 
@@ -28,11 +28,11 @@ if 'debug_text_log' not in st.session_state:
 if 'summary_log' not in st.session_state:
     st.session_state.summary_log = ""
 
-# --- SIDEBAR: CONFIGURAZIONE ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("🔑 Accesso API")
     user_api_key = st.text_input("Google API Key", type="password", key="google_key")
-    openai_api_key = st.text_input("OpenAI API Key", type="password", key="openai_key", help="Per P.IVA, Fatturato e Dipendenti")
+    openai_api_key = st.text_input("OpenAI API Key", type="password", key="openai_key")
     
     st.divider()
     st.header("⚙️ Parametri")
@@ -49,7 +49,6 @@ with st.sidebar:
 
 # --- LAYOUT PRINCIPALE ---
 st.title("🏭 Business Data Extractor")
-
 col_map, col_ctrl = st.columns([2, 1])
 
 with col_map:
@@ -63,112 +62,85 @@ with col_map:
                 folium.Marker([row['lat'], row['lon']], tooltip=row['Ragione Sociale']).add_to(m)
 
     map_res = st_folium(m, width="100%", height=450, key="main_map")
-
     if map_res and map_res['last_clicked']:
-        nl, nn = map_res['last_clicked']['lat'], map_res['last_clicked']['lng']
-        st.session_state.pos = {'lat': nl, 'lon': nn}
+        st.session_state.pos = {'lat': map_res['last_clicked']['lat'], 'lon': map_res['last_clicked']['lng']}
         st.rerun()
 
 with col_ctrl:
     st.subheader("2. Comandi Ricerca")
     st.info(f"📍 Centro: {st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}")
     if st.button("🚀 AVVIA RICERCA GOOGLE", use_container_width=True, type="primary"):
-        if not user_api_key: 
-            st.error("Inserisci la Google API Key")
-        elif not scelte: 
-            st.warning("Seleziona un settore")
+        if not user_api_key or not scelte:
+            st.warning("Inserisci API Key e seleziona un settore")
         else:
             keywords = []
-            for s in scelte: 
-                keywords.extend(ATECO_MAP.get(s, [s]))
+            for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
-                
-                cols_to_add = ['P.IVA (Crawler)', 'Email (Crawler)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'Nota/Fonte (AI)', 'testo_raw']
-                for col in cols_to_add:
-                    if col not in df.columns:
-                        df[col] = "N.D."
-                
+                for col in ['P.IVA (Crawler)', 'Email (Crawler)', 'Fatturato (AI)', 'Dipendenti (AI)', 'testo_raw']:
+                    df[col] = "N.D."
                 st.session_state.results = df
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             st.rerun()
 
-# --- TABELLA RISULTATI E ARRICCHIMENTO ---
+# --- TABELLA E AZIONI ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon', 'testo_raw'], errors='ignore'), use_container_width=True)
     
     btn_col1, btn_col2, btn_col3 = st.columns(3)
-
-    st.write("") 
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
 
-    # --- BOTTONE 1: CRAWLER WEB ---
     with btn_col1:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
-            st.session_state.crawler_log = "🚀 **Inizio Scansione...**\n\n"
-        
-            with log_placeholder.expander("🔍 Debug Estrazione Numeri (Live)", expanded=True):
+            st.session_state.crawler_log = ""
+            with log_placeholder.expander("🔍 Debug Crawler", expanded=True):
                 debug_area = st.empty()
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     if row['Sito Web'] != 'N.D.':
-                        p_web, e_web, testo_web, debug_info = scrape_sito_aziendale(row['Sito Web'])
-                        df_work.at[idx, 'P.IVA (Crawler)'] = p_web
-                        df_work.at[idx, 'Email (Crawler)'] = e_web
-                        df_work.at[idx, 'testo_raw'] = testo_web
-                    
-                        new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
-                        st.session_state.crawler_log += new_entry
+                        p, e, t, d = scrape_sito_aziendale(row['Sito Web'])
+                        df_work.at[idx, 'P.IVA (Crawler)'], df_work.at[idx, 'Email (Crawler)'], df_work.at[idx, 'testo_raw'] = p, e, t
+                        st.session_state.crawler_log += f"**{row['Ragione Sociale']}**: {d}\n\n"
                         debug_area.markdown(st.session_state.crawler_log)
                     bar.progress((i + 1) / len(df_work))
-
                 st.session_state.results = df_work
-                st.success("✅ Crawler completato!")
                 st.rerun()
 
-    # --- BOTTONE 2: RICERCA PER NOME ---
     with btn_col2:
-        if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
-            st.session_state.debug_text_log = ""
-            st.session_state.summary_log = ""
-            df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0)
-            
-            tab1, tab2 = st.tabs(["📊 Riepilogo", "🔍 Ispezione Testo"])
-            with tab1:
-                summary_area = st.empty()
-            with tab2:
-                debug_area = st.empty()
+        if st.button("🤖 2. RICERCA PER NOME (AI)", use_container_width=True, type="primary"):
+            if not openai_api_key:
+                st.error("Inserisci la OpenAI API Key nella sidebar")
+            else:
+                st.session_state.debug_text_log = ""
+                st.session_state.summary_log = ""
+                df_work = st.session_state.results.copy()
+                bar = progress_placeholder.progress(0)
+                t1, t2 = st.tabs(["📊 Riepilogo", "🔍 Ispezione"])
+                with t1: sum_a = st.empty()
+                with t2: deb_a = st.empty()
 
-            for i, (idx, row) in enumerate(df_work.iterrows()):
-                nome = row['Ragione Sociale']
-                indirizzo = row.get('Indirizzo', '')
-                bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
-                
-                # Chiamata alla funzione (usa DuckDuckGo/Sessione come definito in utils.py)
-                fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, indirizzo)
-                
-                df_work.at[idx, 'Fatturato (AI)'] = fatt
-                df_work.at[idx, 'Dipendenti (AI)'] = dip
-                df_work.at[idx, 'testo_raw'] = testo_estratto
-                
-                st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
-                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
-                
-                summary_area.markdown(st.session_state.summary_log)
-                debug_area.markdown(st.session_state.debug_text_log)
-                
-                time.sleep(random.uniform(4, 7)) 
+                for i, (idx, row) in enumerate(df_work.iterrows()):
+                    nome = row['Ragione Sociale']
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi AI: {nome}")
+                    
+                    # Chiamata corretta alla funzione che ora gestisce DuckDuckGo + AI
+                    f, d, txt = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+                    
+                    df_work.at[idx, 'Fatturato (AI)'], df_work.at[idx, 'Dipendenti (AI)'], df_work.at[idx, 'testo_raw'] = f, d, txt
+                    st.session_state.summary_log += f"✅ **{nome}** -> {f} | {d}\n\n"
+                    st.session_state.debug_text_log += f"**{nome}**:\n{txt[:500]}\n---\n"
+                    sum_a.markdown(st.session_state.summary_log)
+                    deb_a.markdown(st.session_state.debug_text_log)
+                    time.sleep(random.uniform(3, 6))
 
-            st.session_state.results = df_work
-            st.success("Analisi completata!")
-            st.rerun()
+                st.session_state.results = df_work
+                st.success("Completato!")
+                st.rerun()
 
-    # --- BOTTONE 3: DOWNLOAD ---
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA DATABASE CSV", csv, "export_aziende.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 SCARICA CSV", csv, "export.csv", "text/csv", use_container_width=True)
