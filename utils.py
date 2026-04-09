@@ -122,33 +122,58 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 def scrape_sito_aziendale(url):
-    """Cerca P.IVA ed Email e restituisce anche il testo della pagina per l'AI."""
+    """Estrae testo e metadati strutturati dal sito per l'analisi AI."""
     if not url or url == 'N.D.':
         return "N.D.", "N.D.", ""
     if not url.startswith('http'): url = 'http://' + url
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    piva_f, email_f, testo_sito = "Non trovata", "Non trovata", ""
+    # Header più robusto per evitare blocchi
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    
+    piva_f, email_f, testo_ai = "Non trovata", "Non trovata", ""
     
     try:
-        res = requests.get(url, headers=headers, timeout=5, verify=False)
+        # Aumentiamo leggermente il timeout per i siti lenti
+        res = requests.get(url, headers=headers, timeout=8, verify=False)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
-            # Prendiamo il testo, ma lo limitiamo (es. 5000 caratteri) per non sprecare token
-            testo_sito = soup.get_text(separator=' ', strip=True)[:5000]
             
-            # Logica Regex P.IVA (veloce)
-            matches = re.findall(r'\d{11}', testo_sito)
+            # 1. Pulizia: togliamo script e style che sporcano il testo
+            for script_or_style in soup(["script", "style", "nav", "header"]):
+                script_or_style.decompose()
+
+            # 2. Estrazione TESTO (Home + Footer)
+            # Spesso la PIVA è nell'ultimo <footer> del sito
+            footer_text = ""
+            footer = soup.find('footer')
+            if footer:
+                footer_text = footer.get_text(separator=' ', strip=True)
+
+            main_text = soup.get_text(separator=' ', strip=True)
+            
+            # Uniamo i pezzi cruciali per l'AI
+            testo_ai = f"FOOTER: {footer_text} | TESTO PAGINA: {main_text}"[:6000]
+            
+            # 3. Regex veloce (Crawler)
+            matches = re.findall(r'\d{11}', testo_ai)
             for m in matches:
                 if is_valid_piva(m):
                     piva_f = m
                     break
-            # Logica Email
-            em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo_sito)
-            if em_match: email_f = em_match.group(0).lower()
-    except:
-        pass
-    return piva_f, email_f, testo_sito
+            
+            # 4. Ricerca Email
+            em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo_ai)
+            if em_match: 
+                email_f = em_match.group(0).lower()
+                
+    except Exception as e:
+        print(f"Errore scraping {url}: {e}")
+        
+    return piva_f, email_f, testo_ai
 
 def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, testo_sito, api_key_openai):
     """Usa il testo del sito web fornito dal crawler per estrarre dati certi."""
