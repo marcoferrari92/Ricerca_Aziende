@@ -111,31 +111,44 @@ if not st.session_state.results.empty:
                 st.rerun()
 
     with btn_col2:
-        if st.button("🤖 2. VEDI COSA VEDE IL BOT", use_container_width=True, type="primary"):
-            st.session_state.debug_text_log = ""
-            df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0)
-            
-            # Contenitore per il log in tempo reale
-            with log_placeholder.expander("🔍 ISPEZIONE LIVE (Snippet DuckDuckGo)", expanded=True):
-                debug_area = st.empty()
+        if st.button("🤖 2. RICERCA COMPLETA (AI + LOG)", use_container_width=True, type="primary"):
+            if not openai_api_key:
+                st.error("Inserisci la OpenAI API Key")
+            else:
+                st.session_state.debug_text_log = ""
+                st.session_state.summary_log = ""
+                df_work = st.session_state.results.copy()
+                bar = progress_placeholder.progress(0)
+                
+                t1, t2 = st.tabs(["📊 Riepilogo Dati", "🔍 Log Completo Testi"])
+                with t1: sum_a = st.empty()
+                with t2: deb_a = st.empty()
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
-                    bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
                     
-                    # --- CHIAMATA A VALORE SINGOLO ---
-                    testo_visto = cerca_info_finanziarie_per_nome(nome)
+                    # RICEVIAMO 4 VALORI
+                    f, d, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
                     
-                    # Salviamo nel log
-                    st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**IL BOT VEDE:** {testo_visto}\n\n---\n"
+                    # 1. Salviamo i dati puliti nel DataFrame
+                    df_work.at[idx, 'Fatturato (AI)'] = f
+                    df_work.at[idx, 'Dipendenti (AI)'] = d
+                    df_work.at[idx, 'Nota/Fonte (AI)'] = extra
+                    df_work.at[idx, 'testo_raw'] = testo_pieno
                     
-                    # Mostriamo a video
-                    debug_area.markdown(st.session_state.debug_text_log)
+                    # 2. Aggiorniamo il riepilogo (Tab 1)
+                    st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
+                    sum_a.markdown(st.session_state.summary_log)
                     
-                    time.sleep(2)
-
-            st.session_state.results = df_work
-            st.success("Scansione completata!")
-            # st.rerun() # Commentato per permetterti di leggere il log prima che la pagina si ricarichi
+                    # 3. Aggiorniamo il log integrale (Tab 2) - QUI VEDI TUTTO IL TESTO
+                    st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
+                    deb_a.markdown(st.session_state.debug_text_log)
+                    
+                    # Manteniamo la pausa per evitare il blocco 202
+                    # La pausa è già inclusa nella funzione cerca_testo_online in utils.py
+                
+                st.session_state.results = df_work
+                st.success("Analisi completata!")
+                st.rerun()
 
