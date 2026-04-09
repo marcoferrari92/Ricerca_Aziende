@@ -10,7 +10,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import dei moduli locali
 from mapping import ATECO_MAP 
-from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_anteprima
+from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_per_nome
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor Pro", page_icon="🏭")
@@ -135,38 +135,35 @@ if not st.session_state.results.empty:
                 # Nota: NON chiamare st.rerun() qui se vuoi che l'expander resti aperto con i dati correnti
     
     with btn_col2:
-        if st.button("🤖 2. RICERCA FATTURATI AUTOMATICA", use_container_width=True, type="primary"):
+        if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
         
-            with log_placeholder.expander("📊 Log Ricerca Finanziaria", expanded=True):
+            with log_placeholder.expander("📊 Analisi Snippet Google", expanded=True):
                 log_area = st.empty()
-                log_history = ""
+                history = ""
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
-                    piva = row.get('P.IVA (Crawler)', 'Non trovata')
+                    nome = row['Ragione Sociale']
+                    indirizzo = row.get('Indirizzo', '')
                 
-                    # Chiamata alla nuova funzione
-                    fatt, dip, snippet = cerca_info_finanziarie_anteprima(piva)
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi: {nome}")
                 
-                    # Salvataggio nel DataFrame
+                    fatt, dip, snippet = cerca_info_finanziarie_per_nome(nome, indirizzo)
+                
                     df_work.at[idx, 'Fatturato (AI)'] = fatt
                     df_work.at[idx, 'Dipendenti (AI)'] = dip
-                    df_work.at[idx, 'Nota/Fonte (AI)'] = "Google Snippet"
+                    df_work.at[idx, 'Nota/Fonte (AI)'] = "Google Overview/Snippet"
                 
-                    # Log a video per vedere se sta leggendo bene
-                    log_history += f"**{row['Ragione Sociale']}** (P.IVA: {piva})\n- Fatturato: {fatt}\n- Dipendenti: {dip}\n---\n"
-                    log_area.markdown(log_history)
+                    history += f"✅ **{nome}** -> Fatt: {fatt} | Dip: {dip}\n\n"
+                    log_area.markdown(history)
                 
-                    bar.progress((i + 1) / len(df_work))
-                
-                    # IMPORTANTE: Pausa tra le ricerche per non farsi bloccare da Google
-                    time.sleep(3) 
+                    time.sleep(4) 
 
+                # Queste righe sono indentate come il "for", quindi partono quando il for ha finito
                 st.session_state.results = df_work
-                st.session_state.crawler_log += "\n\n--- RICERCA FATTURATI COMPLETATA ---"
-                st.success("Analisi completata!")
-                st.rerun()
+                st.success("Analisi completata con successo!")
+                st.rerun() # <--- FA RICARICARE LA PAGINA PER MOSTRARE I DATI NELLA TABELLA
 
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
