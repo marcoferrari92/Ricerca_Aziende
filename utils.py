@@ -229,60 +229,44 @@ session.headers.update({
 
 from urllib.parse import urlparse
 
+from urllib.parse import urlparse, parse_qs
+
 def cerca_testo_online(ragione_sociale):
-    """
-    Cerca su DuckDuckGo e marca ogni snippet con il nome del sito di origine.
-    """
-    # 1. Pulizia Nome
     nome_pulito = " ".join(ragione_sociale.split()[:4])
-    query = f"{nome_pulito} fatturatoitalia".replace(" ", "+")
+    query = f"{nome_pulito} fatturatoitalia aziende.it".replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': 'https://www.google.com/'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'}
 
     try:
-        # Pausa per evitare il blocco 202
         time.sleep(random.uniform(6, 12)) 
-        
         res = session.get(url, headers=headers, timeout=15)
-        
-        if res.status_code != 200:
-            return f"BLOCCO SERVER (Codice {res.status_code})"
+        if res.status_code != 200: return f"Errore {res.status_code}"
 
         soup = BeautifulSoup(res.text, "html.parser")
-        
-        # DuckDuckGo Lite organizza i risultati in tabelle
-        # Ogni risultato è solitamente contenuto in un corpo di tabella o righe consecutive
         risultati_testo = []
         
-        # Troviamo tutti i link dei risultati
         links = soup.find_all('a', class_='result-link')
-        # Troviamo tutti gli snippet
         snippets = soup.find_all('td', class_='result-snippet')
 
-        # Associniamo link e snippet (DuckDuckGo Lite li tiene in ordine corrispondente)
         for link, snippet in zip(links, snippets):
-            href = link.get('href', '')
-            testo_snippet = snippet.get_text(strip=True)
+            raw_href = link.get('href', '')
             
-            # Estraiamo il dominio (es. fatturatoitalia.it)
-            if href.startswith('http'):
-                dominio = urlparse(href).netloc.replace("www.", "")
+            # --- LOGICA PER ESTRARRE IL SITO REALE ---
+            # DuckDuckGo Lite usa spesso /l/?kh=...&uddg=URL_REALE
+            if "/l/?" in raw_href:
+                parsed_query = parse_qs(urlparse(raw_href).query)
+                real_url = parsed_query.get('uddg', [raw_href])[0]
+                dominio = urlparse(real_url).netloc.replace("www.", "")
             else:
-                dominio = "Link esterno"
+                dominio = urlparse(raw_href).netloc.replace("www.", "")
             
-            # Formattiamo come richiesto: [SITO] TESTO
+            if not dominio: dominio = "Sito non identificato"
+            
+            testo_snippet = snippet.get_text(strip=True)
             risultati_testo.append(f"[{dominio.upper()}] {testo_snippet}")
 
-        if risultati_testo:
-            return " | ".join(risultati_testo)
-        else:
-            # Fallback se la struttura Lite è diversa (es. mobile o query particolare)
-            testo_fallback = " ".join([a.get_text() for a in soup.find_all("a") if len(a.get_text()) > 25])
-            return testo_fallback if testo_fallback.strip() else "Nessun risultato trovato."
+        return " | ".join(risultati_testo) if risultati_testo else "Nessun risultato."
 
     except Exception as e:
         return f"Eccezione tecnica: {str(e)}"
