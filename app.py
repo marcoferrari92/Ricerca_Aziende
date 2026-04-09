@@ -132,9 +132,10 @@ if not st.session_state.results.empty:
                         
                         # Chiamata alla tua funzione AI
                         fatt, dip, piva_ai, fonte = chiedi_a_openai(
-                            current_name, 
+                            row['Ragione Sociale'], 
                             row['P.IVA (Crawler)'], 
                             row['Sito Web'], 
+                            row['Indirizzo'], 
                             openai_api_key
                         )
                         
