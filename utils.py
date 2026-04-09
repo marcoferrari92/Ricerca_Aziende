@@ -281,16 +281,18 @@ def estrai_con_ai(testo, api_key):
     client = OpenAI(api_key=api_key)
     
     prompt = f"""
-    Analizza il testo estratto (ogni snippet inizia con [DOMINIO.IT]).
-    Estrai i dati e, per ciascuno, indica ESATTAMENTE da quale dominio lo hai preso.
+    Analizza il testo e recupera i dati. 
+    
+    REGOLE RIGIDE DI FORMATTAZIONE:
+    1. SE MANCANO DATI: Usa sempre "N.D.", non usare puntini, spazi o "non specificato".
+    2. FATTURATO: Converti sempre in formato decimale italiano con simbolo Euro (es. 1.300.000 €). 
+       Se trovi "1.3 M €" scrivi "1.300.000 €". Se trovi un range, scrivi "300.000 - 600.000 €".
+    3. DIPENDENTI: Solo numeri o range (es. "5" o "2-5").
+    4. FONTI: Identifica il dominio dal tag [DOMINIO.IT].
 
     TESTO: \"\"\"{testo}\"\"\"
     
-    REGOLE:
-    - Se il fatturato è in uno snippet [SITO-A.IT] e i dipendenti in [SITO-B.IT], specificalo.
-    - Sii estremamente preciso nel riportare il dominio.
-
-    RESTITUISCI ESCLUSIVAMENTE UN JSON:
+    JSON:
     {{
         "fatturato": {{ "valore": "...", "fonte": "..." }},
         "dipendenti": {{ "valore": "...", "fonte": "..." }},
@@ -310,30 +312,28 @@ def estrai_con_ai(testo, api_key):
         )
         dati = json.loads(response.choices[0].message.content)
         
-        # Estrazione dati e fonti specifiche
-        f_val = dati.get("fatturato", {}).get("valore", "N.D.")
-        f_src = dati.get("fatturato", {}).get("fonte", "N.D.")
+        # Pulizia post-estrazione per sicurezza
+        def clean_nd(val):
+            if not val or val.lower() in ["none", "null", "non specificato", "...", "nan"]:
+                return "N.D."
+            return str(val).strip()
+
+        f_val = clean_nd(dati.get("fatturato", {}).get("valore"))
+        f_src = clean_nd(dati.get("fatturato", {}).get("fonte"))
+        d_val = clean_nd(dati.get("dipendenti", {}).get("valore"))
+        d_src = clean_nd(dati.get("dipendenti", {}).get("fonte"))
         
-        d_val = dati.get("dipendenti", {}).get("valore", "N.D.")
-        d_src = dati.get("dipendenti", {}).get("fonte", "N.D.")
+        piva = clean_nd(dati.get("partita_iva"))
+        ateco = clean_nd(dati.get("ateco"))
+        rag_soc = clean_nd(dati.get("ragione_sociale"))
+        ind = clean_nd(dati.get("indirizzo"))
         
-        piva = dati.get("partita_iva", "N.D.")
-        ateco = dati.get("ateco", "N.D.")
-        rag_soc = dati.get("ragione_sociale", "N.D.")
-        ind = dati.get("indirizzo", "N.D.")
+        info_extra = f"FATT da: {f_src.upper()} | DIP da: {d_src.upper()} | PIVA: {piva}"
         
-        # Creiamo una nota super dettagliata per la colonna blu
-        info_extra = (
-            f"FATTURATO da: {f_src.upper()} | "
-            f"DIPENDENTI da: {d_src.upper()} | "
-            f"P.IVA: {piva}"
-        )
-        
-        # Restituiamo 8 valori (f_val e d_val vanno nelle colonne principali)
         return f_val, d_val, piva, ind, ateco, rag_soc, info_extra, testo
 
     except Exception as e:
-        return "Errore", "Errore", "Errore", "Errore", "Errore", "Errore", f"AI Error: {str(e)}", testo
+        return "Errore AI", "Errore AI", "Errore AI", "Errore AI", "Errore AI", "Errore AI", f"AI Error: {str(e)}", testo
 
 
 def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
