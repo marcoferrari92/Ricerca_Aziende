@@ -155,17 +155,6 @@ def scrape_sito_aziendale(url):
                     piva_f = found
 
             # =========================
-            # 🔍 3. CERCA SOLO HEADER
-            # =========================
-            if piva_f == "Non trovata":
-                header = soup.find('header')
-                if header:
-                    header_text = header.get_text(" ", strip=True)
-                    found = cerca_piva(header_text)
-                    if found:
-                        piva_f = found
-
-            # =========================
             # 🔍 4. CERCA SOLO FOOTER
             # =========================
             if piva_f == "Non trovata":
@@ -193,7 +182,7 @@ def scrape_sito_aziendale(url):
 
                 if any(k in full.lower() for k in [
                     'contatti', 'contact', 'about', 'chi-siamo',
-                    'privacy', 'legal', 'impressum'
+                    'privacy', 'legal', 'impressum', '/home'
                 ]):
                     if full not in visited:
                         to_visit.append(full)
