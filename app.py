@@ -84,27 +84,33 @@ if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
     
-    # Tabella pulita senza stili CSS/Colori
+    # Tabella principale (sempre visibile in alto)
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon'], errors='ignore'), use_container_width=True)
     
+    # Pulsanti di azione
     btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+    # --- AREA MONITORAGGIO (Sotto i pulsanti) ---
+    # Definiamo i placeholder qui sotto per far apparire barra e log in fondo
+    st.write("") 
+    progress_placeholder = st.empty()
+    log_placeholder = st.empty()
 
     with btn_col1:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
-            bar = st.progress(0)
-            msg = st.empty()
+            bar = progress_placeholder.progress(0, text="Inizializzazione Crawler...")
             
             for i, (idx, row) in enumerate(df_work.iterrows()):
+                status_text = f"🌐 Scraping: {row['Ragione Sociale']} ({i+1}/{len(df_work)})"
+                bar.progress((i + 1) / len(df_work), text=status_text)
+                
                 if row['Sito Web'] != 'N.D.':
-                    msg.text(f"Scraping: {row['Ragione Sociale']}...")
                     p_web, e_web = scrape_sito_aziendale(row['Sito Web'])
                     df_work.at[idx, 'P.IVA (Crawler)'] = str(p_web)
                     df_work.at[idx, 'Email (Crawler)'] = str(e_web)
-                bar.progress((i + 1) / len(df_work))
             
             st.session_state.results = df_work
-            msg.success("✅ Dati Crawler completati!")
             st.rerun()
 
     with btn_col2:
@@ -113,34 +119,39 @@ if not st.session_state.results.empty:
                 st.error("Inserisci la OpenAI Key!")
             else:
                 df_work = st.session_state.results.copy()
-                bar = st.progress(0)
-                msg = st.empty()
+                bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
                 
-                for i, (idx, row) in enumerate(df_work.iterrows()):
-                    msg.text(f"AI Audit: {row['Ragione Sociale']}...")
-                    
-                    # Chiamata alla tua funzione che restituisce 4 valori
-                    # (Assicurati che utils.py sia aggiornato per ritornare anche piva_ai)
-                    fatt, dip, piva_ai, fonte = chiedi_a_openai(
-                        row['Ragione Sociale'], 
-                        row['P.IVA (Crawler)'], 
-                        row['Sito Web'], 
-                        openai_api_key
-                    )
-                    
-                    # Assegnazione alle colonne AI
-                    df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
-                    df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
-                    df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
-                    df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
-                    
-                    bar.progress((i + 1) / len(df_work))
+                # Log in tempo reale sotto la barra
+                with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
+                    log_entry = st.empty()
+                    history = []
+
+                    for i, (idx, row) in enumerate(df_work.iterrows()):
+                        current_name = row['Ragione Sociale']
+                        bar.progress((i + 1) / len(df_work), text=f"🤖 AI sta analizzando: {current_name}")
+                        
+                        # Chiamata alla tua funzione AI
+                        fatt, dip, piva_ai, fonte = chiedi_a_openai(
+                            current_name, 
+                            row['P.IVA (Crawler)'], 
+                            row['Sito Web'], 
+                            openai_api_key
+                        )
+                        
+                        # Salvataggio dati
+                        df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
+                        df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
+                        df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
+                        df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
+                        
+                        # Scrittura log
+                        history.append(f"✅ **{current_name}** → Fatt: {fatt} | Dip: {dip} | P.IVA AI: {piva_ai}")
+                        log_entry.markdown("\n".join(history[-8:])) # Mostra gli ultimi 8 per leggibilità
                 
                 st.session_state.results = df_work
-                msg.success("✅ Analisi AI completata!")
                 st.rerun()
 
     with btn_col3:
-        # Download finale del CSV
+        # Download (corretto refuso to_csv)
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA DATABASE CSV", csv, "aziende_export.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 SCARICA DATABASE CSV", csv, "aziende_vicenza.csv", "text/csv", use_container_width=True)
