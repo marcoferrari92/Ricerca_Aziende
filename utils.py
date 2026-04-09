@@ -225,38 +225,47 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0'
 })
 
-# --- 1. CERCA TESTO ONLINE ---
-def cerca_info_finanziarie_per_nome(ragione_sociale):
+def cerca_info_finanziarie_per_nome(ragione_sociale, api_key=None):
     """
-    Restituisce SOLO il testo grezzo degli snippet di DuckDuckGo.
+    Restituisce SOLO il testo visto dal bot.
+    Pulisce il nome e gestisce il blocco 202.
     """
-    query = f"{ragione_sociale} fatturatoitalia".replace(" ", "+")
+    # 1. Pulizia Nome: prendiamo solo le prime 3-4 parole 
+    # (Toglie robe tipo "Srl è l'azienda specializzata dal 1945...")
+    nome_pulito = " ".join(ragione_sociale.split()[:4])
+    
+    query = f"{nome_pulito} fatturatoitalia".replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://www.google.com/'
     }
 
     try:
-        res = session.get(url, headers=headers, timeout=10)
+        # PAUSA OBBLIGATORIA: Più è lunga, meno probabilità di Errore 202
+        time.sleep(random.uniform(6, 12)) 
+        
+        res = session.get(url, headers=headers, timeout=15)
+        
         if res.status_code != 200:
-            return f"Errore di connessione (Codice: {res.status_code})"
+            return f"BLOCCO SERVER (Codice {res.status_code}): Riprova tra poco o aumenta il tempo di attesa."
 
         soup = BeautifulSoup(res.text, "html.parser")
         
-        # Estraiamo i testi dalle descrizioni dei risultati
+        # Estraiamo gli snippet
         snippets = soup.find_all("td", class_="result-snippet")
         
         if snippets:
             testo_visto = " | ".join([s.get_text(strip=True) for s in snippets])
         else:
-            # Se non ci sono snippet, proviamo a prendere i titoli dei link
-            testo_visto = " ".join([a.get_text() for a in soup.find_all("a") if len(a.get_text()) > 20])
+            # Fallback se la struttura cambia leggermente
+            testo_visto = " ".join([a.get_text() for a in soup.find_all("a") if len(a.get_text()) > 25])
 
-        return testo_visto if testo_visto.strip() else "Pagina vuota o nessun risultato trovato."
+        return testo_visto if testo_visto.strip() else "Pagina vuota: DuckDuckGo non ha trovato risultati per questa query."
 
     except Exception as e:
-        return f"Eccezione durante lo scraping: {str(e)}"
+        return f"Eccezione tecnica: {str(e)}"
 
 
 # --- 5. ESTRAZIONE AI ---
