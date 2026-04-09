@@ -20,6 +20,8 @@ if 'pos' not in st.session_state:
     st.session_state.pos = {'lat': 45.4642, 'lon': 9.1900} 
 if 'results' not in st.session_state:
     st.session_state.results = pd.DataFrame()
+if 'crawler_log' not in st.session_state:
+    st.session_state.crawler_log = ""
 
 # --- SIDEBAR: CONFIGURAZIONE ---
 with st.sidebar:
@@ -102,26 +104,36 @@ if not st.session_state.results.empty:
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
         
-            with log_placeholder.expander("🔍 Log Dettagliato Crawler", expanded=True):
-                log_area = st.empty()
-                history_log = []
+            # Puliamo il log precedente all'avvio di una nuova scansione
+            st.session_state.crawler_log = "🚀 **Inizio Scansione...**\n\n"
+        
+            # Creiamo l'expander che rimarrà visibile
+            with log_placeholder.expander("🔍 Debug Estrazione Numeri (Live)", expanded=True):
+                debug_area = st.empty()
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     if row['Sito Web'] != 'N.D.':
-                        # Riceviamo 4 valori invece di 3
+                        # Riceviamo i 4 valori dalla tua funzione aggiornata
                         p_web, e_web, testo_web, debug_info = scrape_sito_aziendale(row['Sito Web'])
                     
                         df_work.at[idx, 'P.IVA (Crawler)'] = p_web
                         df_work.at[idx, 'Email (Crawler)'] = e_web
                         df_work.at[idx, 'testo_raw'] = testo_web
                     
-                        # Stampiamo nel log i numeri trovati
-                        history_log.append(f"**Azienda:** {row['Ragione Sociale']}\n{debug_info}")
-                        log_area.markdown("\n---\n".join(history_log[-3:])) # Mostra gli ultimi 3
+                        # Accumuliamo il log nello session_state
+                        new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
+                        st.session_state.crawler_log += new_entry
+                    
+                        # Mostriamo l'aggiornamento in tempo reale
+                        debug_area.markdown(st.session_state.crawler_log)
 
-            st.session_state.results = df_work
-            st.rerun()
+                    bar.progress((i + 1) / len(df_work))
 
+                # Aggiorniamo i risultati finali
+                st.session_state.results = df_work
+                st.success("✅ Crawler completato!")
+                # Nota: NON chiamare st.rerun() qui se vuoi che l'expander resti aperto con i dati correnti
+    
     with btn_col2:
         if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
             if not openai_api_key:
