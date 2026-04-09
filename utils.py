@@ -219,46 +219,43 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 
-def cerca_info_finanziarie_anteprima(piva):
-    if piva == "Non trovata" or "Invalida" in piva:
-        return "N.D.", "N.D.", "P.IVA non valida"
-
-    # Puliamo la P.IVA (solo numeri)
-    piva_clean = "".join(filter(str.isdigit, piva))
-    
-    # Query mirata per far apparire i numeri nelle anteprime di Google
-    query = f"https://www.google.com/search?q=fatturato+dipendenti+piva+{piva_clean}"
+def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
+    # Puliamo il nome da eventuali caratteri speciali per la URL
+    query_string = f"{ragione_sociale} {indirizzo} fatturato dipendenti".replace(" ", "+")
+    query_url = f"https://www.google.com/search?q={query_string}"
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     try:
-        # 1. Facciamo la richiesta a Google
-        res = requests.get(query, headers=headers, timeout=10)
+        res = requests.get(query_url, headers=headers, timeout=10)
         if res.status_code != 200:
-            return "Errore Google", "Errore Google", "Google ha bloccato la richiesta (codice 429)"
+            return "Errore connessione", "Errore connessione", "Google ha bloccato la richiesta"
 
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # 2. Prendiamo tutti gli snippet (le anteprime di testo sotto i titoli)
-        # Nelle classi di Google spesso sono i div con classe 'VwiC3b' o simili
-        anteprime = soup.find_all('div')
-        testo_anteprime = " ".join([a.get_text() for a in anteprime if len(a.get_text()) > 50])
+        # Prendiamo tutto il testo della pagina per l'analisi (inclusi gli snippet AI)
+        testo_completo = soup.get_text(separator=' ', strip=True)
 
-        # 3. REGEX PER ESTRARRE I VALORI DALL'ANTEPRIMA
-        # Fatturato: cerca numeri seguiti da milioni o euro
-        regex_fatturato = r'(?i)(?:fatturato|volume d\'affari)[:\s-]{1,5}([\d\.,]+\s?(?:mln|mila|milioni|€|euro))'
-        # Dipendenti: cerca numeri vicini alla parola dipendenti
-        regex_dipendenti = r'(?i)(?:dipendenti|personale)[:\s-]{1,5}(\d+(?:\s?-\s?\d+)?)'
+        # REGEX POTENZIATE (basate su quello che vediamo nello screenshot)
+        # Cerca formati come: "€ 479.292", "479.292 euro", "Fatturato 2024: € 479.292"
+        regex_fatturato = r'(?i)(?:Fatturato|€)\s*[:\s-]{0,3}([\d\.]+)\s?(?:€|euro|milioni|mln)?'
+        # Cerca formati come: "Dipendenti: 5", "5 dipendenti"
+        regex_dipendenti = r'(?i)(?:Dipendenti|personale)\s*[:\s-]{0,3}(\d+)'
 
-        fatt_match = re.search(regex_fatturato, testo_anteprime)
-        dip_match = re.search(regex_dipendenti, testo_anteprime)
+        # Cerchiamo i match
+        fatt_match = re.search(regex_fatturato, testo_completo)
+        dip_match = re.search(regex_dipendenti, testo_completo)
 
         val_fatt = fatt_match.group(1) if fatt_match else "N.D."
         val_dip = dip_match.group(1) if dip_match else "N.D."
         
-        return val_fatt, val_dip, testo_anteprime[:500] # Restituiamo un pezzo di anteprima come prova
+        # Aggiungiamo il simbolo € se è un numero puro
+        if val_fatt != "N.D." and "€" not in val_fatt:
+            val_fatt = f"€ {val_fatt}"
+
+        return val_fatt, val_dip, testo_completo[:500]
 
     except Exception as e:
         return "Errore", "Errore", str(e)
