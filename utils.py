@@ -340,14 +340,17 @@ def estrai_con_ai(testo, api_key):
 
 def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
     """
-    Funzione principale che coordina ricerca e AI.
+    Funzione coordinatrice: cerca il testo e lo passa all'AI.
+    Deve restituire esattamente 5 valori.
     """
-    # 1. Recupera il testo (la funzione che abbiamo testato prima)
+    # 1. Ottieni il testo da DuckDuckGo
     testo_grezzo = cerca_testo_online(ragione_sociale) 
     
-    if "Errore" in testo_grezzo or "Pagina vuota" in testo_grezzo:
-        return "N.D.", "N.D.", testo_grezzo
+    # Se il testo è vuoto o c'è un errore di connessione
+    if not testo_grezzo or "Errore" in testo_grezzo:
+        # Restituiamo 5 valori di "N.D." per evitare il crash
+        return "N.D.", "N.D.", "N.D.", "Ricerca fallita", testo_grezzo
         
-    # 2. Passa all'AI per il parsing
+    # 2. Passa all'AI (che ora restituisce 5 valori)
     return estrai_con_ai(testo_grezzo, api_key)
 
