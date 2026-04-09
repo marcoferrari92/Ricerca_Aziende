@@ -74,50 +74,75 @@ with col_ctrl:
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             st.rerun()
 
-# --- TABELLA E AI ---
+# --- TABELLA RISULTATI E SCRAPING ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader(f"3. Risultati ({len(st.session_state.results)})")
+    st.subheader(f"3. Gestione Risultati ({len(st.session_state.results)} aziende)")
     
     view_cols = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
     st.dataframe(st.session_state.results[view_cols], use_container_width=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🔍 ARRICCHISCI CON AI (P.IVA + Bilancio)", use_container_width=True):
+    # Creiamo tre colonne per i pulsanti
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    
+    # --- PULSANTE 1: CRAWLER WEB (Email + P.IVA grezza) ---
+    with btn_col1:
+        if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True, help="Estrae Email e P.IVA navigando il sito (Gratis)"):
+            df_work = st.session_state.results.copy().astype(object)
+            bar = st.progress(0)
+            msg = st.empty()
+            
+            for i, (idx, row) in enumerate(df_work.iterrows()):
+                if row['Sito Web'] != 'N.D.':
+                    msg.text(f"Navigazione sito: {row['Ragione Sociale']}...")
+                    p_web, e_web = scrape_sito_aziendale(row['Sito Web'])
+                    df_work.at[idx, 'Partita IVA'] = str(p_web)
+                    df_work.at[idx, 'Email'] = str(e_web)
+                bar.progress((i + 1) / len(df_work))
+            
+            st.session_state.results = df_work
+            msg.success("✅ Web Scraping completato!")
+            st.rerun()
+
+    # --- PULSANTE 2: ANALISI AI (Fatturato + Conferma) ---
+    with btn_col2:
+        if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary", help="Usa OpenAI per Fatturato, Dipendenti e validazione P.IVA"):
             if not openai_api_key:
-                st.error("Inserisci la OpenAI Key per questa funzione!")
+                st.error("Inserisci la OpenAI Key nella sidebar!")
             else:
-                df_work = st.session_state.results.copy()
+                df_work = st.session_state.results.copy().astype(object)
                 bar = st.progress(0)
                 msg = st.empty()
                 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
-                    msg.text(f"Analisi AI: {row['Ragione Sociale']}...")
+                    msg.text(f"Elaborazione AI: {row['Ragione Sociale']}...")
                     
-                    # 1. Scraping Email e P.IVA grezza dal sito
-                    p_web, e_web = scrape_sito_aziendale(row['Sito Web'])
-                    
-                    # 2. Conferma AI e ricerca Fatturato/Dipendenti
+                    # Usa la funzione AI passando i dati già raccolti dal crawler (se presenti)
                     fatt, dip, p_final = ricerca_dati_ai(
                         row['Ragione Sociale'], 
                         row['Indirizzo'], 
                         row['Sito Web'], 
-                        p_web, 
+                        row.get('Partita IVA', 'N.D.'), 
                         openai_api_key
                     )
                     
-                    df_work.at[idx, 'Partita IVA'] = p_final
-                    df_work.at[idx, 'Email'] = e_web
-                    df_work.at[idx, 'Fatturato'] = fatt
-                    df_work.at[idx, 'Dipendenti'] = dip
+                    df_work.at[idx, 'Fatturato'] = str(fatt)
+                    df_work.at[idx, 'Dipendenti'] = str(dip)
+                    df_work.at[idx, 'Partita IVA'] = str(p_final)
                     
                     bar.progress((i + 1) / len(df_work))
                 
                 st.session_state.results = df_work
-                msg.success("✅ Arricchimento AI completato!")
+                msg.success("✅ Analisi AI completata!")
                 st.rerun()
 
-    with c2:
+    # --- PULSANTE 3: DOWNLOAD ---
+    with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA CSV", data=csv, file_name="export_aziende.csv", mime="text/csv", use_container_width=True)
+        st.download_button(
+            "📥 SCARICA DATABASE CSV", 
+            data=csv, 
+            file_name="leads_aziende.csv", 
+            mime="text/csv", 
+            use_container_width=True
+        )
