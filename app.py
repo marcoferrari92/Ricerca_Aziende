@@ -90,8 +90,11 @@ with col_ctrl:
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
-    st.dataframe(st.session_state.results.drop(columns=['lat', 'lon', 'testo_raw'], errors='ignore'), use_container_width=True)
     
+    # Chiamata alla funzione esterna di stile
+    tabella_stilizzata = applica_stile_tabella(st.session_state.results)
+    
+    st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
