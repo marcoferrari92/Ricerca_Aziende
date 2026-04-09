@@ -121,24 +121,36 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
-def chiedi_a_openai(nome_azienda, piva_crawler, sito, api_key_openai):
+def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, api_key_openai): # <--- Aggiunto indirizzo
     if not api_key_openai:
         return "N.D.", "N.D.", "N.D.", "Manca Key"
 
+    from openai import OpenAI
+    import json
     client = OpenAI(api_key=api_key_openai)
-    # Ho aggiunto la richiesta esplicita della PIVA nel prompt
-    prompt = f"""Analista finanziario: trova il fatturato più recente, il numero di dipendenti e la Partita IVA per l'azienda: {nome_azienda}.  
-    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}. Se ignoto usa 'N.D.'."""
+    
+    # Diamo più contesto: indirizzo e sito web sono fondamentali per le PMI
+    prompt = f"""Analista finanziario: trova dati per {nome_azienda}.
+    Indirizzo: {indirizzo}
+    Sito Web: {sito}
+    P.IVA suggerita dal crawler: {piva_crawler}
+
+    Trova il fatturato più recente (2022-2024) e il numero di dipendenti.
+    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}. 
+    Se non sei sicuro al 100%, fai una stima basata sul settore e sulle dimensioni dell'azienda indicando la stima nella fonte."""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o", # <--- CONSIGLIO: Usa gpt-4o (non mini) per dati finanziari, è molto più preciso
             messages=[{"role": "user", "content": prompt}],
             response_format={ "type": "json_object" }
         )
         data = json.loads(response.choices[0].message.content)
-        # Ritorna QUATTRO valori ora
-        return data.get("fatturato", "N.D."), data.get("dipendenti", "N.D."), data.get("piva", "N.D."), data.get("fonte", "N.D.")
+        return (
+            str(data.get("fatturato", "N.D.")), 
+            str(data.get("dipendenti", "N.D.")), 
+            str(data.get("piva", "N.D.")), 
+            str(data.get("fonte", "AI Knowledge"))
+        )
     except Exception as e:
         return "Errore AI", "N.D.", "N.D.", str(e)
-
