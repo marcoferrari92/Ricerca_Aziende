@@ -278,36 +278,26 @@ import re
 from openai import OpenAI
 
 def estrai_con_ai(testo, api_key):
-    """
-    Usa GPT-4 per estrarre dati strutturati e restituisce 8 valori separati
-    per popolare le colonne di controllo in app.py.
-    """
     client = OpenAI(api_key=api_key)
     
     prompt = f"""
-    Analizza il seguente testo e recupera le informazioni richieste.
-    
-    TESTO:
-    \"\"\"{testo}\"\"\"
-    
-    REGOLE DI ESTRAZIONE:
-    1. FATTURATO: Valore numerico più recente (es. "1.2M€").
-    2. DIPENDENTI: Numero o range (es. "10-15").
-    3. ATECO: Codice numerico (es. "25.11").
-    4. RAGIONE SOCIALE: Nome ufficiale dell'azienda.
-    5. INDIRIZZO: Indirizzo completo.
-    6. PARTITA IVA: Cerca il numero di 11 cifre (es. "01234567890").
-    7. FONTI: nomi dei siti da cui hai preso i valori (es. "fatturatoitalia.it"). 
+    Analizza il testo estratto (ogni snippet inizia con [DOMINIO.IT]).
+    Estrai i dati e, per ciascuno, indica ESATTAMENTE da quale dominio lo hai preso.
 
-    RESTITUISCI ESCLUSIVAMENTE UN OGGETTO JSON:
+    TESTO: \"\"\"{testo}\"\"\"
+    
+    REGOLE:
+    - Se il fatturato è in uno snippet [SITO-A.IT] e i dipendenti in [SITO-B.IT], specificalo.
+    - Sii estremamente preciso nel riportare il dominio.
+
+    RESTITUISCI ESCLUSIVAMENTE UN JSON:
     {{
-        "fatturato": "valore o N.D.",
-        "dipendenti": "valore o N.D.",
-        "ateco": "valore o N.D.",
-        "ragione_sociale": "valore o N.D.",
-        "indirizzo": "valore o N.D.",
-        "partita_iva": "valore o N.D.",
-        "fonti": "valori o N.D.",
+        "fatturato": {{ "valore": "...", "fonte": "..." }},
+        "dipendenti": {{ "valore": "...", "fonte": "..." }},
+        "ateco": "...",
+        "ragione_sociale": "...",
+        "indirizzo": "...",
+        "partita_iva": "..."
     }}
     """
     
@@ -318,37 +308,30 @@ def estrai_con_ai(testo, api_key):
             temperature=0,
             response_format={ "type": "json_object" }
         )
-        
         dati = json.loads(response.choices[0].message.content)
         
-        # Estrazione di tutti i campi dal JSON
-        f = dati.get("fatturato", "N.D.")
-        d = dati.get("dipendenti", "N.D.")
+        # Estrazione dati e fonti specifiche
+        f_val = dati.get("fatturato", {}).get("valore", "N.D.")
+        f_src = dati.get("fatturato", {}).get("fonte", "N.D.")
+        
+        d_val = dati.get("dipendenti", {}).get("valore", "N.D.")
+        d_src = dati.get("dipendenti", {}).get("fonte", "N.D.")
+        
         piva = dati.get("partita_iva", "N.D.")
         ateco = dati.get("ateco", "N.D.")
         rag_soc = dati.get("ragione_sociale", "N.D.")
         ind = dati.get("indirizzo", "N.D.")
-        fonte = dati.get("fonti", "N.D.")
         
-        # Stringa sintetica per la colonna Nota/Fonte
-        info_extra = f"FONTE: {fonte.upper()}"
+        # Creiamo una nota super dettagliata per la colonna blu
+        info_extra = (
+            f"FATTURATO da: {f_src.upper()} | "
+            f"DIPENDENTI da: {d_src.upper()} | "
+            f"P.IVA: {piva}"
+        )
         
-        # RESTITUIAMO 8 VALORI: 
-        # 1.Fatturato, 2.Dipendenti, 3.PIVA, 4.Indirizzo, 5.ATECO, 6.Ragione Sociale, 7.Nota Extra, 8.Testo Raw
-        return f, d, piva, ind, ateco, rag_soc, info_extra, testo
+        # Restituiamo 8 valori (f_val e d_val vanno nelle colonne principali)
+        return f_val, d_val, piva, ind, ateco, rag_soc, info_extra, testo
 
     except Exception as e:
-        # In caso di errore, restituiamo comunque 8 valori per non rompere app.py
-        return "Errore", "Errore", "Errore", "Errore", "Errore", "Errore", f"AI Exception: {str(e)}", testo
-
-def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
-    """
-    Funzione coordinatrice che deve anch'essa restituire 8 valori.
-    """
-    testo_grezzo = cerca_testo_online(ragione_sociale)
-    
-    if not testo_grezzo or "Errore" in testo_grezzo:
-        return "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "Ricerca fallita", testo_grezzo
-        
-    return estrai_con_ai(testo_grezzo, api_key)
+        return "Errore", "Errore", "Errore", "Errore", "Errore", "Errore", f"AI Error: {str(e)}", testo
 
