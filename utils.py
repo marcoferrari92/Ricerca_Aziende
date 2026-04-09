@@ -261,57 +261,82 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0'
 })
 
-def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
+import requests
+from bs4 import BeautifulSoup
+import time
 
-    def estrai_dati(testo):
-        regex_fatturato = r'(?i)(fatturato|ricavi)[^\d]{0,20}([\d\.,]+)'
-        regex_dip = r'(?i)(dipendenti|personale)[^\d]{0,20}(\d+)'
+session = requests.Session()
+session.headers.update({'User-Agent': 'Mozilla/5.0'})
 
-        fatt = re.search(regex_fatturato, testo)
-        dip = re.search(regex_dip, testo)
+def cerca_testo_online(ragione_sociale, max_retry=2):
+    query = ragione_sociale.replace(" ", "+")
+    url = f"https://lite.duckduckgo.com/lite/?q={query}"
 
-        val_fatt = f"€ {fatt.group(2)}" if fatt else "N.D."
-        val_dip = dip.group(2) if dip else "N.D."
-
-        return val_fatt, val_dip
-
-    for attempt in range(max_retry):
+    for _ in range(max_retry):
         try:
-            # 1️⃣ Tentativo aziende.it
-            slug = ragione_sociale.lower().replace(" ", "-").replace(".", "")
-            url = f"https://www.aziende.it/{slug}"
-
             res = session.get(url, timeout=10)
+            if res.status_code != 200:
+                time.sleep(1)
+                continue
 
-            if res.status_code == 200 and len(res.text) > 3000:
-                soup = BeautifulSoup(res.text, "html.parser")
-                testo = soup.get_text(" ", strip=True)
+            soup = BeautifulSoup(res.text, "html.parser")
 
-                fatt, dip = estrai_dati(testo)
-                return fatt, dip, testo[:2000]
+            risultati = []
+            for a in soup.find_all("a"):
+                txt = a.text.strip()
+                if len(txt) > 20:
+                    risultati.append(txt)
 
-            # 2️⃣ Fallback DuckDuckGo (generico)
-            query = ragione_sociale.replace(" ", "+")
-            search_url = f"https://lite.duckduckgo.com/lite/?q={query}"
+            return " ".join(risultati)
 
-            res = session.get(search_url, timeout=10)
+        except:
+            time.sleep(1)
 
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, "html.parser")
+    return ""
 
-                risultati = []
-                for a in soup.find_all("a"):
-                    txt = a.text.strip()
-                    if len(txt) > 20:
-                        risultati.append(txt)
 
-                testo = " ".join(risultati)
 
-                fatt, dip = estrai_dati(testo)
 
-                return fatt, dip, testo[:2000]
 
-        except Exception as e:
-            time.sleep(1 + attempt)
+import requests
+from bs4 import BeautifulSoup
+import time
 
-    return "N.D.", "N.D.", "Nessuna informazione trovata"
+session = requests.Session()
+session.headers.update({'User-Agent': 'Mozilla/5.0'})
+
+def cerca_testo_online(ragione_sociale, max_retry=2):
+    query = ragione_sociale.replace(" ", "+")
+    url = f"https://lite.duckduckgo.com/lite/?q={query}"
+
+    for _ in range(max_retry):
+        try:
+            res = session.get(url, timeout=10)
+            if res.status_code != 200:
+                time.sleep(1)
+                continue
+
+            soup = BeautifulSoup(res.text, "html.parser")
+
+            risultati = []
+            for a in soup.find_all("a"):
+                txt = a.text.strip()
+                if len(txt) > 20:
+                    risultati.append(txt)
+
+            return " ".join(risultati)
+
+        except:
+            time.sleep(1)
+
+    return ""
+
+
+def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=2):
+
+    testo = cerca_testo_online(ragione_sociale, max_retry)
+
+    if not testo:
+        return "N.D.", "N.D.", "Nessun testo trovato"
+
+    return estrai_info_finanziarie(ragione_sociale, testo, indirizzo)
