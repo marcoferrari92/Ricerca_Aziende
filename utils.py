@@ -227,63 +227,60 @@ import re
 # Questo oggetto manterrà i cookie per tutte le chiamate successive
 session = requests.Session()
 
-def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
-    # Pulizia della query: usiamo solo nome azienda e keyword "fatturato"
+import requests
+from bs4 import BeautifulSoup
+import re
+import time
+
+# Session globale per riusare connessione e headers
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
+})
+
+def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
+    # 1️⃣ Costruisci query per DuckDuckGo Lite
     query_string = f"{ragione_sociale} fatturato".replace(" ", "+")
-    
-    # URL DuckDuckGo HTML con filtro regione Italia
-    query_url = f"https://duckduckgo.com/html/?q={query_string}&kl=it-it"
-    
-    # Headers evoluti per simulare un browser reale
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://duckduckgo.com/',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
+    query_url = f"https://lite.duckduckgo.com/lite/?q={query_string}"
 
-    try:
-        # 2. Usiamo session.get invece di requests.get
-        res = session.get(query_url, headers=headers, timeout=15)
-        
-        if res.status_code != 200:
-            return "N.D.", "N.D.", f"Errore HTTP {res.status_code} (DuckDuckGo)"
+    testo_estratto = ""
+    for attempt in range(max_retry):
+        try:
+            res = session.get(query_url, timeout=15)
+            
+            if res.status_code != 200:
+                time.sleep(1 + attempt)  # backoff
+                continue
 
-        # 3. Parsing del contenuto
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Estraiamo gli snippet (i testi brevi sotto i risultati)
-        snippets = soup.find_all('a', class_='result__snippet')
-        testo_estratto = " ".join([s.get_text() for s in snippets])
+            soup = BeautifulSoup(res.text, 'html.parser')
 
-        # Se DuckDuckGo HTML non restituisce snippet classici, prendiamo il testo della pagina
-        if len(testo_estratto) < 100:
-            # Pulizia preventiva dei tag che sporcano il testo
-            for script in soup(["script", "style"]):
-                script.decompose()
-            testo_estratto = soup.get_text(separator=' ', strip=True)
+            # 2️⃣ Estrai link principali dai risultati
+            results = soup.find_all('a')
+            link_testo = []
+            for a in results:
+                if a.get('href') and a.text.strip():
+                    link_testo.append(a.text.strip())
+            testo_estratto = " ".join(link_testo)[:5000]  # massimo 5000 caratteri
 
-        # 4. REGEX POTENZIATE
-        # Gestisce: "Fatturato: 100.000", "€ 100.000", "pari a 100.000 euro"
-        regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
-        # Gestisce: "Dipendenti: 10", "10 dipendenti"
-        regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)\s*[:\s-]{0,3}(\d+)'
+            # 3️⃣ Estrazione fatturato con regex
+            regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a|ricavi)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
+            regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)\s*[:\s-]{0,3}(\d+)'
 
-        fatt_match = re.search(regex_fatturato, testo_estratto)
-        dip_match = re.search(regex_dipendenti, testo_estratto)
+            fatt_match = re.search(regex_fatturato, testo_estratto)
+            dip_match = re.search(regex_dipendenti, testo_estratto)
 
-        val_fatt = fatt_match.group(1).strip() if fatt_match else "N.D."
-        val_dip = dip_match.group(1).strip() if dip_match else "N.D."
-        
-        # Aggiungiamo il simbolo € se abbiamo trovato un numero ma manca il simbolo
-        if val_fatt != "N.D." and "€" not in val_fatt and "euro" not in val_fatt.lower():
-            val_fatt = f"€ {val_fatt}"
+            val_fatt = fatt_match.group(1).strip() if fatt_match else "N.D."
+            val_dip = dip_match.group(1).strip() if dip_match else "N.D."
 
-        # Restituiamo i dati e una porzione di testo per il debug in Streamlit
-        return val_fatt, val_dip, testo_estratto[:2000]
+            if val_fatt != "N.D." and "€" not in val_fatt.lower():
+                val_fatt = f"€ {val_fatt}"
 
-    except Exception as e:
-        return "Errore", "Errore", f"Eccezione: {str(e)}"
+            return val_fatt, val_dip, testo_estratto[:2000]
+
+        except Exception as e:
+            testo_estratto = f"Eccezione: {str(e)}"
+            time.sleep(1 + attempt)
+
+    # 4️⃣ Se tutti i retry falliscono
+    return "Errore", "Errore", f"Impossibile recuperare dati: {testo_estratto}"
