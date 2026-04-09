@@ -8,9 +8,8 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import dei moduli locali
-# Assicurati che utils.py contenga fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_anteprima
 from mapping import ATECO_MAP 
-from utils import fetch_data_google, scrape_sito_aziendale, chiedi_a_openai
+from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_anteprima
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(layout="wide", page_title="Business Data Extractor Pro", page_icon="🏭")
