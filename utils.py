@@ -312,6 +312,6 @@ Testo: {testo}
 
 # --- 6. FUNZIONE PRINCIPALE PER BOTTONE 2 ---
 def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
-    testo = cerca_testo_online(ragione_sociale)
+    testo = cerca_info_finanziarie_per_nome(ragione_sociale)
     if not testo: return "N.D.", "N.D.", "Nessun risultato trovato online"
     return estrai_con_ai(testo, api_key)
