@@ -226,36 +226,37 @@ session.headers.update({
 })
 
 # --- 1. CERCA TESTO ONLINE ---
-
-def estrai_testo_finanziario(ragione_sociale, max_retry=3):
+def cerca_info_finanziarie_per_nome(ragione_sociale):
     """
-    Estrae il testo finanziario dalle pagine FatturatoItalia.it e aziende.it.
-    Restituisce lo snippet testuale pronto per essere passato a un'AI.
+    Restituisce SOLO il testo grezzo degli snippet di DuckDuckGo.
     """
-    for attempt in range(max_retry):
-        try:
-            # 1️⃣ Prova FatturatoItalia.it
-            slug = ragione_sociale.lower().replace(" ", "-").replace(".", "")
-            url = f"https://www.fatturatoitalia.it/azienda/{slug}"
-            res = session.get(url, timeout=10)
-            if res.status_code == 200 and len(res.text) > 1000:
-                soup = BeautifulSoup(res.text, "html.parser")
-                main_div = soup.find("div", class_="company-info") or soup
-                testo = main_div.get_text(" ", strip=True)
-                return testo[:2000]
+    query = f"{ragione_sociale} fatturatoitalia".replace(" ", "+")
+    url = f"https://lite.duckduckgo.com/lite/?q={query}"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'
+    }
 
-            # 2️⃣ Prova aziende.it
-            url = f"https://www.aziende.it/{slug}"
-            res = session.get(url, timeout=10)
-            if res.status_code == 200 and len(res.text) > 1000:
-                soup = BeautifulSoup(res.text, "html.parser")
-                testo = soup.get_text(" ", strip=True)
-                return testo[:2000]
+    try:
+        res = session.get(url, headers=headers, timeout=10)
+        if res.status_code != 200:
+            return f"Errore di connessione (Codice: {res.status_code})"
 
-        except Exception as e:
-            time.sleep(1 + attempt)
+        soup = BeautifulSoup(res.text, "html.parser")
+        
+        # Estraiamo i testi dalle descrizioni dei risultati
+        snippets = soup.find_all("td", class_="result-snippet")
+        
+        if snippets:
+            testo_visto = " | ".join([s.get_text(strip=True) for s in snippets])
+        else:
+            # Se non ci sono snippet, proviamo a prendere i titoli dei link
+            testo_visto = " ".join([a.get_text() for a in soup.find_all("a") if len(a.get_text()) > 20])
 
-    return "Nessuna informazione trovata"
+        return testo_visto if testo_visto.strip() else "Pagina vuota o nessun risultato trovato."
+
+    except Exception as e:
+        return f"Eccezione durante lo scraping: {str(e)}"
 
 
 # --- 5. ESTRAZIONE AI ---
@@ -300,7 +301,3 @@ Testo: {testo}
     except Exception as e:
         return "Errore", "Errore", f"AI exception: {str(e)}"
 
-# --- 6. FUNZIONE PRINCIPALE PER BOTTONE 2 ---
-def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
-    testo = estrai_testo_finanziario(ragione_sociale)
-    return testo
