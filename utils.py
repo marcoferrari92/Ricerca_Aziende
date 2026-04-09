@@ -71,159 +71,142 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 
-import requests
 import re
+import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+import time
 
-# --- VALIDAZIONE P.IVA ---
+# --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
 def is_valid_piva(piva):
-    if len(piva) != 11 or not piva.isdigit():
+    if not piva or len(piva) != 11 or not piva.isdigit():
         return False
-    
     s = sum(int(piva[i]) for i in range(0, 10, 2))
-    s += sum((int(piva[i]) * 2 - 9) if int(piva[i]) * 2 > 9 else int(piva[i]) * 2 for i in range(1, 10, 2))
-    
+    for i in range(1, 10, 2):
+        temp = int(piva[i]) * 2
+        s += temp if temp <= 9 else temp - 9
     check = (10 - s % 10) % 10
     return check == int(piva[-1])
 
+# --- FUNZIONE DI ESTRAZIONE CORE ---
+def cerca_piva(testo):
+    if not testo: return None
+    # Regex migliorata: cerca prefissi comuni e isola 11 cifre
+    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|Partita\s*IVA|P\s*I|C\.F\.|CF)[:\s-]{1,6}(\d{11})\b'
+    matches = re.findall(piva_pattern, testo)
+    for m in matches:
+        if is_valid_piva(m):
+            return m
+    return None
 
-def scrape_sito_aziendale(url):
-
+def scrape_sito_aziendale(url, ragione_sociale=""):
     if not url or url == 'N.D.':
         return "Non trovata", "Non trovata", ""
 
     if not url.startswith('http'):
-        url = 'http://' + url
+        url = 'https://' + url
 
+    # Header più realistico per evitare blocchi
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
     }
 
     visited = set()
     to_visit = [url]
-
     piva_f, email_f = "Non trovata", "Non trovata"
     testo_per_ai = ""
 
-    # Regex più robusta
-    #piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,15}(\d{11})'
-    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|P\s*I|CF|C\.F\.)[:\s-]{1,5}(\d{11})\b'
-    
-    # --- FUNZIONE DI ESTRAZIONE ---
-    def cerca_piva(testo):
-        matches = re.findall(piva_pattern, testo, re.IGNORECASE)
-        for m in matches:
-            if is_valid_piva(m):
-                return m
-        return None
-
     while to_visit and len(visited) < 5:
         current = to_visit.pop(0)
+        if current in visited: continue
         visited.add(current)
 
         try:
-            res = requests.get(current, headers=headers, timeout=6)
-            if res.status_code != 200:
-                continue
-
+            res = requests.get(current, headers=headers, timeout=8)
+            if res.status_code != 200: continue
+            
             html = res.text
             soup = BeautifulSoup(html, 'html.parser')
 
-            for el in soup(["script", "style"]):
+            # 1. CERCA NEI META TAG (Spesso contengono dati legali per SEO)
+            if piva_f == "Non trovata":
+                meta_content = " ".join([tag.get('content', '') for tag in soup.find_all('meta')])
+                found = cerca_piva(meta_content)
+                if found: piva_f = found
+
+            # Pulizia per estrazione testo
+            for el in soup(["script", "style", "nav", "header"]): 
                 el.decompose()
 
             text = soup.get_text(separator=' ', strip=True)
-
-            # --- TESTO PER AI ---
-            if len(testo_per_ai) < 5000:
+            if len(testo_per_ai) < 6000:
                 testo_per_ai += f" [URL: {current}] " + text
 
-            # =========================
-            # 🔍 1. CERCA SU TESTO PULITO
-            # =========================
+            # 2. CERCA NEL TESTO PULITO E NEL FOOTER
             if piva_f == "Non trovata":
-                found = cerca_piva(text)
-                if found:
-                    piva_f = found
+                piva_f = cerca_piva(text) or "Non trovata"
 
-            # =========================
-            # 🔍 2. CERCA SU HTML RAW (HEADER HACK)
-            # =========================
-            if piva_f == "Non trovata":
-                found = cerca_piva(html)
-                if found:
-                    piva_f = found
-
-            # =========================
-            # 🔍 4. CERCA SOLO FOOTER
-            # =========================
-            if piva_f == "Non trovata":
-                footer = soup.find('footer')
-                if footer:
-                    footer_text = footer.get_text(" ", strip=True)
-                    found = cerca_piva(footer_text)
-                    if found:
-                        piva_f = found
-                        
-            # =========================
-            # 📧 EMAIL
-            # =========================
+            # 3. CERCA EMAIL
             if email_f == "Non trovata":
                 em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-                if em:
-                    email_f = em.group(0).lower()
+                if em: email_f = em.group(0).lower()
 
-            # =========================
-            # 🔗 LINK INTERNI
-            # =========================
+            # 4. RACCOLTA LINK (Contatti, Chi Siamo, Privacy)
             for link in soup.find_all('a', href=True):
                 href = link['href']
                 full = urljoin(url, href)
-
-                if any(k in full.lower() for k in [
-                    'contatti', 'contact', 'about', 'chi-siamo',
-                    'privacy', 'legal', 'impressum', '/home'
-                ]):
+                if any(k in full.lower() for k in ['contatti', 'contact', 'about', 'chi-siamo', 'legal', 'privacy', 'note-legali']):
                     if full not in visited:
                         to_visit.append(full)
 
             if piva_f != "Non trovata" and email_f != "Non trovata":
                 break
 
-        except:
+        except Exception as e:
+            print(f"Errore su {current}: {e}")
             continue
 
-    # =========================
-    # 🚀 FALLBACK SELENIUM (SOLO SE NON TROVATA)
-    # =========================
+    # --- FALLBACK SELENIUM (Con scrolling per caricare footer dinamici) ---
     if piva_f == "Non trovata":
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
-            import time
-
-            options = Options()
-            options.add_argument("--headless")
-            options.add_argument("--disable-gpu")
-
-            driver = webdriver.Chrome(options=options)
+            
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")
+            driver = webdriver.Chrome(options=chrome_options)
             driver.get(url)
-            time.sleep(3)
-
-            html = driver.page_source
+            
+            # Scroll verso il basso per attivare il caricamento del footer
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2) 
+            
+            piva_f = cerca_piva(driver.page_source) or "Non trovata"
             driver.quit()
-
-            found = cerca_piva(html)
-            if found:
-                piva_f = found
-
         except:
             pass
 
     return piva_f, email_f, testo_per_ai[:6000]
 
+
+# --- FUNZIONE EXTRA PER FATTURATO (Ricerca Esterna Gratis) ---
+def get_financial_data(piva):
+    """
+    Tenta di recuperare fatturato e dipendenti da aggregatori gratuiti usando la P.IVA
+    """
+    if piva == "Non trovata": return "N.D.", "N.D."
+    
+    try:
+        # Esempio su ReportAziende (sito molto semplice da scansionare)
+        search_url = f"https://www.reportaziende.it/ricerca?qs={piva}"
+        res = requests.get(search_url, timeout=10)
+        # Qui andrebbe aggiunto il parsing della tabella risultati
+        # Per ora restituiamo un placeholder
+        return "Da analizzare su ReportAziende", "Disponibile online"
+    except:
+        return "Errore ricerca", "Errore ricerca"
 
 
 
