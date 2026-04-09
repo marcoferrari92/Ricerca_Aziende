@@ -111,36 +111,41 @@ if not st.session_state.results.empty:
                 st.rerun()
 
     with btn_col2:
-        if st.button("🤖 2. RICERCA PER NOME (AI)", use_container_width=True, type="primary"):
-            if not openai_api_key:
-                st.error("Inserisci la OpenAI API Key nella sidebar")
-            else:
-                st.session_state.debug_text_log = ""
-                st.session_state.summary_log = ""
-                df_work = st.session_state.results.copy()
-                bar = progress_placeholder.progress(0)
-                t1, t2 = st.tabs(["📊 Riepilogo", "🔍 Ispezione"])
-                with t1: sum_a = st.empty()
-                with t2: deb_a = st.empty()
+        # Ho rimosso il type="primary" per differenziarlo se non usa l'AI
+        if st.button("🔍 2. ESTRAI TESTO GREZZO", use_container_width=True):
+            st.session_state.debug_text_log = ""
+            st.session_state.summary_log = ""
+            df_work = st.session_state.results.copy()
+            bar = progress_placeholder.progress(0)
+            
+            t1, t2 = st.tabs(["📊 Stato", "🔍 Testo Estratto"])
+            with t1: sum_a = st.empty()
+            with t2: deb_a = st.empty()
 
-                for i, (idx, row) in enumerate(df_work.iterrows()):
-                    nome = row['Ragione Sociale']
-                    bar.progress((i + 1) / len(df_work), text=f"Analisi AI: {nome}")
-                    
-                    # Chiamata corretta alla funzione che ora gestisce DuckDuckGo + AI
-                    f, d, txt = cerca_info_finanziarie_per_nome(nome, openai_api_key)
-                    
-                    df_work.at[idx, 'Fatturato (AI)'], df_work.at[idx, 'Dipendenti (AI)'], df_work.at[idx, 'testo_raw'] = f, d, txt
-                    st.session_state.summary_log += f"✅ **{nome}** -> {f} | {d}\n\n"
-                    st.session_state.debug_text_log += f"**{nome}**:\n{txt[:500]}\n---\n"
-                    sum_a.markdown(st.session_state.summary_log)
-                    deb_a.markdown(st.session_state.debug_text_log)
-                    time.sleep(random.uniform(3, 6))
+            for i, (idx, row) in enumerate(df_work.iterrows()):
+                nome = row['Ragione Sociale']
+                bar.progress((i + 1) / len(df_work), text=f"Scansione: {nome}")
+                
+                # --- CHIAMATA DIRETTA ALLA TUA FUNZIONE ---
+                # Dato che estrai_testo_finanziario restituisce solo il testo,
+                # assegniamo "N.D." a fatturato e dipendenti manualmente
+                txt = cerca_info_finanziarie_per_nome(nome, "") 
+                f, d = "N.D.", "N.D." 
+                
+                # Aggiorniamo il dataframe
+                df_work.at[idx, 'testo_raw'] = txt
+                
+                # Aggiorniamo i log visivi
+                st.session_state.summary_log += f"✅ **{nome}** -> Testo recuperato\n\n"
+                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**CONTENUTO:**\n{txt}\n\n---\n"
+                
+                sum_a.markdown(st.session_state.summary_log)
+                deb_a.markdown(st.session_state.debug_text_log)
+                
+                # Pausa breve per evitare blocchi IP
+                time.sleep(random.uniform(1, 2))
 
-                st.session_state.results = df_work
-                st.success("Completato!")
-                st.rerun()
+            st.session_state.results = df_work
+            st.success("Testi estratti correttamente!")
+            st.rerun()
 
-    with btn_col3:
-        csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA CSV", csv, "export.csv", "text/csv", use_container_width=True)
