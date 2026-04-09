@@ -74,6 +74,7 @@ with col_ctrl:
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             st.rerun()
 
+
 # --- TABELLA RISULTATI E SCRAPING ---
 if not st.session_state.results.empty:
     st.divider()
@@ -146,3 +147,4 @@ if not st.session_state.results.empty:
             mime="text/csv", 
             use_container_width=True
         )
+        
