@@ -222,7 +222,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
     # DuckDuckGo HTML è perfetto per lo scraping semplice
     query_string = f"{ragione_sociale} fatturato"
-    query_url = f"https://html.duckduckgo.com/html/?q={query_string}"
+    query_url = f"https://duckduckgo.com/html/?q={query_string}&kl=it-it"
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
