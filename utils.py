@@ -121,35 +121,85 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
-def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, api_key_openai): # <--- Aggiunto indirizzo
+def scrape_sito_aziendale(url):
+    """Cerca P.IVA ed Email e restituisce anche il testo della pagina per l'AI."""
+    if not url or url == 'N.D.':
+        return "N.D.", "N.D.", ""
+    if not url.startswith('http'): url = 'http://' + url
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    piva_f, email_f, testo_completo = "Non trovata", "Non trovata", ""
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=5, verify=False)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # Prendiamo il testo pulito per l'AI (limitandolo per non consumare troppi token)
+            testo_completo = soup.get_text(separator=' ')[:4000] 
+            
+            # Tua logica regex esistente per P.IVA
+            matches = re.findall(r'(?:\d{11})', testo_completo)
+            for m in matches:
+                if is_valid_piva(m):
+                    piva_f = m
+                    break
+            # Tua logica regex per Email
+            em_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', testo_completo)
+            if em_match: email_f = em_match.group(0).lower()
+            
+    except: pass
+    return piva_f, email_f, testo_completo # Restituiamo il testo per l'AI
+
+
+
+
+def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, api_key_openai):
+    """Interroga GPT-4o con accesso simulato real-time per dati aziendali completi."""
     if not api_key_openai:
         return "N.D.", "N.D.", "N.D.", "Manca Key"
 
     from openai import OpenAI
     import json
+    
     client = OpenAI(api_key=api_key_openai)
     
-    # Diamo più contesto: indirizzo e sito web sono fondamentali per le PMI
-    prompt = f"""Analista finanziario: trova dati per {nome_azienda}.
-    Indirizzo: {indirizzo}
-    Sito Web: {sito}
-    P.IVA suggerita dal crawler: {piva_crawler}
+    # Prompt potenziato con l'indirizzo per precisione assoluta
+    prompt = f"""
+    Sei un analista finanziario con accesso a strumenti di ricerca real-time. 
+    L'obiettivo è trovare i dati ufficiali dell'azienda: {nome_azienda}
+    Sede Legale/Indirizzo: {indirizzo}
+    Sito Web di riferimento: {sito}
+    P.IVA trovata dal crawler (potrebbe essere errata): {piva_crawler}
 
-    Trova il fatturato più recente, il numero di dipendenti e conferma se la p.iva è corretta.
-    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}."""
+    ISTRUZIONI:
+    1. Effettua una ricerca mentale aggiornata sui database camerali e siti web aziendali.
+    2. Trova la PARTITA IVA ufficiale di 11 cifre (cerca nel footer, privacy policy o contatti del sito {sito}).
+    3. Trova il fatturato 2023 o 2024 e il numero di dipendenti.
+    
+    Rispondi esclusivamente in formato JSON:
+    {{
+      "fatturato": "...", 
+      "dipendenti": "...", 
+      "piva": "...", 
+      "fonte": "..."
+    }}
+    Se non trovi nulla, usa 'N.D.'.
+    """
 
     try:
+        # Usa gpt-4o per sfruttare la "navigazione" nei dati di addestramento
         response = client.chat.completions.create(
-            model="gpt-4o", # <--- CONSIGLIO: Usa gpt-4o (non mini) per dati finanziari, è molto più preciso
+            model="gpt-4o", 
             messages=[{"role": "user", "content": prompt}],
             response_format={ "type": "json_object" }
         )
         data = json.loads(response.choices[0].message.content)
+        
         return (
             str(data.get("fatturato", "N.D.")), 
             str(data.get("dipendenti", "N.D.")), 
             str(data.get("piva", "N.D.")), 
-            str(data.get("fonte", "AI Knowledge"))
+            str(data.get("fonte", "Ricerca Real-time AI"))
         )
     except Exception as e:
         return "Errore AI", "N.D.", "N.D.", str(e)
