@@ -216,74 +216,46 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 
+def cerca_info_finanziarie_anteprima(piva):
+    if piva == "Non trovata" or "Invalida" in piva:
+        return "N.D.", "N.D.", "P.IVA non valida"
 
-
-
-import json
-from openai import OpenAI
-
-def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, testo_sito, api_key_openai):
-    """
-    Analizza i dati aziendali usando GPT-4o, incrociando la sua conoscenza 
-    con il testo reale del sito web e validando la P.IVA.
-    """
-    if not api_key_openai:
-        return "N.D.", "N.D.", "N.D.", "Manca Key"
-
-    client = OpenAI(api_key=api_key_openai)
+    # Puliamo la P.IVA (solo numeri)
+    piva_clean = "".join(filter(str.isdigit, piva))
     
-    # Prompt ottimizzato per estrazione e stima intelligente
-    prompt = f"""
-    Sei un investigatore economico esperto in aziende italiane (SAS, SRL, SNC).
-    Trova i dati fiscali per: {nome_azienda}
-    Sede: {indirizzo}
-    Sito: {sito}
-
-    ISTRUZIONI TASSATIVE:
-    1. PARTITA IVA: Cerca nel testo del sito la Partita IVA o il Codice Fiscale (11 cifre). 
-       Se il crawler dice '{piva_crawler}', verificalo. Se è N.D., estrailo dal testo.
-    2. FATTURATO: Cerca il fatturato più recente. 
-    3. NUMERO DIPENDENTI: Cerca il numero di dipendenti.
-    3. NON INVENTARE: Se non trovi la P.IVA nel testo e non sei sicuro, scrivi 'N.D.', ma tenta prima una ricerca profonda basata sulla sede {indirizzo}.
-
-    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}
-    """
+    # Query mirata per far apparire i numeri nelle anteprime di Google
+    query = f"https://www.google.com/search?q=fatturato+dipendenti+piva+{piva_clean}"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o", 
-            messages=[
-                {"role": "system", "content": "Sei un assistente esperto in dati camerali e analisi di siti web aziendali."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={ "type": "json_object" },
-            temperature=0.2
-        )
-        
-        # Caricamento dati JSON
-        res_content = response.choices[0].message.content
-        data = json.loads(res_content)
-        
-        # --- LOGICA DI PULIZIA E VALIDAZIONE P.IVA ---
-        raw_piva = str(data.get("piva", "N.D."))
-        # Rimuove IT, spazi, punti e trattini
-        piva_solo_numeri = "".join(filter(str.isdigit, raw_piva))
-        
-        # Validazione con la TUA funzione is_valid_piva
-        if is_valid_piva(piva_solo_numeri):
-            piva_finale = piva_solo_numeri
-        elif piva_crawler != "Non trovata" and is_valid_piva(piva_crawler):
-            # Se l'AI sbaglia ma il crawler aveva ragione, recuperiamo quella del crawler
-            piva_finale = piva_crawler
-        else:
-            piva_finale = "N.D. (Invalida)"
+        # 1. Facciamo la richiesta a Google
+        res = requests.get(query, headers=headers, timeout=10)
+        if res.status_code != 200:
+            return "Errore Google", "Errore Google", "Google ha bloccato la richiesta (codice 429)"
 
-        # --- ESTRAZIONE ALTRI DATI ---
-        fatturato = data.get("fatturato", "N.D.")
-        dipendenti = data.get("dipendenti", "N.D.")
-        fonte = data.get("fonte", "Analisi AI + Web")
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # 2. Prendiamo tutti gli snippet (le anteprime di testo sotto i titoli)
+        # Nelle classi di Google spesso sono i div con classe 'VwiC3b' o simili
+        anteprime = soup.find_all('div')
+        testo_anteprime = " ".join([a.get_text() for a in anteprime if len(a.get_text()) > 50])
 
-        return str(fatturato), str(dipendenti), piva_finale, str(fonte)
+        # 3. REGEX PER ESTRARRE I VALORI DALL'ANTEPRIMA
+        # Fatturato: cerca numeri seguiti da milioni o euro
+        regex_fatturato = r'(?i)(?:fatturato|volume d\'affari)[:\s-]{1,5}([\d\.,]+\s?(?:mln|mila|milioni|€|euro))'
+        # Dipendenti: cerca numeri vicini alla parola dipendenti
+        regex_dipendenti = r'(?i)(?:dipendenti|personale)[:\s-]{1,5}(\d+(?:\s?-\s?\d+)?)'
+
+        fatt_match = re.search(regex_fatturato, testo_anteprime)
+        dip_match = re.search(regex_dipendenti, testo_anteprime)
+
+        val_fatt = fatt_match.group(1) if fatt_match else "N.D."
+        val_dip = dip_match.group(1) if dip_match else "N.D."
+        
+        return val_fatt, val_dip, testo_anteprime[:500] # Restituiamo un pezzo di anteprima come prova
 
     except Exception as e:
-        return "Errore AI", "N.D.", "N.D.", str(e)
+        return "Errore", "Errore", str(e)
