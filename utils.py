@@ -333,12 +333,13 @@ def cerca_testo_online(ragione_sociale, max_retry=2):
     return ""
 
 
-# 2️⃣ Funzione per estrarre fatturato e dipendenti con AI
 def estrai_con_ai(testo, api_key):
     """
-    Usa OpenAI per estrarre fatturato e numero dipendenti dal testo
+    Usa OpenAI per estrarre fatturato e numero dipendenti dal testo (Versione Aggiornata)
     """
-    openai.api_key = api_key
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key) # Inizializzazione client
+    
     prompt = f"""
     Estrai dal testo le informazioni finanziarie principali.
     Testo: \"\"\"{testo}\"\"\"
@@ -349,12 +350,15 @@ def estrai_con_ai(testo, api_key):
     }}
     """
     try:
-        response = openai.ChatCompletion.create(
+        # Chiamata aggiornata
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
-        contenuto = response['choices'][0]['message']['content'].strip()
+        # Accesso al contenuto aggiornato
+        contenuto = response.choices[0].message.content.strip()
+        
         dati = json.loads(contenuto)
         return dati.get("fatturato", "N.D."), dati.get("dipendenti", "N.D."), testo[:2000]
     except Exception as e:
