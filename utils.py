@@ -107,8 +107,9 @@ def scrape_sito_aziendale(url):
     testo_per_ai = ""
 
     # Regex più robusta
-    piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,15}(\d{11})'
-
+    #piva_pattern = r'(?:P\.?\s*IVA|VAT|Partita\s*IVA)[^\d]{0,15}(\d{11})'
+    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|P\s*I|CF|C\.F\.)[:\s-]{1,5}(\d{11})\b'
+    
     # --- FUNZIONE DI ESTRAZIONE ---
     def cerca_piva(testo):
         matches = re.findall(piva_pattern, testo, re.IGNORECASE)
