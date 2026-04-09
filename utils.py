@@ -239,33 +239,61 @@ session.headers.update({
     'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
 })
 
+import requests
+from bs4 import BeautifulSoup
+import re
+import time
+
+# Session globale per riusare connessione e headers
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
+})
+
 def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
-    # 1️⃣ Costruisci query per DuckDuckGo Lite
-    query_string = f"{ragione_sociale} fatturato".replace(" ", "+")
-    query_url = f"https://lite.duckduckgo.com/lite/?q={query_string}"
+    """
+    Restituisce:
+    (valore_fatturato, numero_dipendenti, testo_estratto)
+    """
+    # 1️⃣ Costruisci query mirata su DuckDuckGo Lite (solo per link)
+    query_string = f"{ragione_sociale} site:aziende.it"
+    query_url = f"https://lite.duckduckgo.com/lite/?q={query_string.replace(' ', '+')}"
 
     testo_estratto = ""
     for attempt in range(max_retry):
         try:
             res = session.get(query_url, timeout=15)
-            
             if res.status_code != 200:
-                time.sleep(1 + attempt)  # backoff
+                time.sleep(1 + attempt)  # backoff esponenziale
                 continue
 
             soup = BeautifulSoup(res.text, 'html.parser')
 
-            # 2️⃣ Estrai link principali dai risultati
-            results = soup.find_all('a')
-            link_testo = []
-            for a in results:
-                if a.get('href') and a.text.strip():
-                    link_testo.append(a.text.strip())
-            testo_estratto = " ".join(link_testo)[:5000]  # massimo 5000 caratteri
+            # 2️⃣ Estrai il primo link affidabile verso aziende.it
+            link = None
+            for a in soup.find_all('a'):
+                href = a.get('href', '')
+                if "aziende.it" in href:
+                    link = href
+                    break
 
-            # 3️⃣ Estrazione fatturato con regex
-            regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a|ricavi)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
-            regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)\s*[:\s-]{0,3}(\d+)'
+            if not link:
+                testo_estratto = "Nessun link affidabile trovato"
+                continue
+
+            # 3️⃣ Scarica contenuto della pagina azienda
+            res2 = session.get(link, timeout=10)
+            if res2.status_code != 200:
+                testo_estratto = f"Pagina azienda non accessibile (HTTP {res2.status_code})"
+                continue
+
+            soup2 = BeautifulSoup(res2.text, 'html.parser')
+            testo_estratto = soup2.get_text(" ", strip=True)[:5000]
+
+            # 4️⃣ Estrazione dati con regex
+            regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a|ricavi)[^\d]{0,20}([\d\.,]+)'
+            regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)[^\d]{0,20}(\d+)'
 
             fatt_match = re.search(regex_fatturato, testo_estratto)
             dip_match = re.search(regex_dipendenti, testo_estratto)
@@ -276,11 +304,12 @@ def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
             if val_fatt != "N.D." and "€" not in val_fatt.lower():
                 val_fatt = f"€ {val_fatt}"
 
+            # 5️⃣ Restituisce esattamente la tupla prevista
             return val_fatt, val_dip, testo_estratto[:2000]
 
         except Exception as e:
             testo_estratto = f"Eccezione: {str(e)}"
             time.sleep(1 + attempt)
 
-    # 4️⃣ Se tutti i retry falliscono
+    # 6️⃣ Se tutti i retry falliscono
     return "Errore", "Errore", f"Impossibile recuperare dati: {testo_estratto}"
