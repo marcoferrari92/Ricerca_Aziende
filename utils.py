@@ -319,7 +319,7 @@ def estrai_con_ai(testo, api_key):
         # Creiamo una stringa di controllo per il log
         info_extra = f"Sociale: {dati.get('ragione_sociale')} | Indirizzo: {dati.get('indirizzo')} | ATECO: {dati.get('ateco')}"
         
-        return f, d, info_extra
+        return f, d, info_extra, testo
 
     except Exception as e:
         return "Errore", "Errore", f"AI Exception: {str(e)}"
