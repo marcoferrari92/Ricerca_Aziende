@@ -276,8 +276,8 @@ from openai import OpenAI
 
 def estrai_con_ai(testo, api_key):
     """
-    Usa GPT-4 per estrarre dati strutturati, inclusa la P.IVA, 
-    mantenendo il testo originale per il log.
+    Usa GPT-4 per estrarre dati strutturati e restituisce 8 valori separati
+    per popolare le colonne di controllo in app.py.
     """
     client = OpenAI(api_key=api_key)
     
@@ -316,41 +316,33 @@ def estrai_con_ai(testo, api_key):
         
         dati = json.loads(response.choices[0].message.content)
         
+        # Estrazione di tutti i campi dal JSON
         f = dati.get("fatturato", "N.D.")
         d = dati.get("dipendenti", "N.D.")
         piva = dati.get("partita_iva", "N.D.")
+        ateco = dati.get("ateco", "N.D.")
+        rag_soc = dati.get("ragione_sociale", "N.D.")
+        ind = dati.get("indirizzo", "N.D.")
         
-        # Stringa di controllo con tutti i dati extra inclusa la P.IVA
-        info_extra = (
-            f"PIVA: {piva} | "
-            f"Sociale: {dati.get('ragione_sociale')} | "
-            f"ATECO: {dati.get('ateco')} | "
-            f"Indirizzo: {dati.get('indirizzo')}"
-        )
+        # Stringa sintetica per la colonna Nota/Fonte
+        info_extra = f"CHECK: {rag_soc} | PIVA: {piva} | ATECO: {ateco}"
         
-        # RESTITUIAMO 5 VALORI (Fatturato, Dipendenti, P.IVA, Info Extra, Testo Originale)
-        return f, d, piva, info_extra, testo
+        # RESTITUIAMO 8 VALORI: 
+        # 1.Fatturato, 2.Dipendenti, 3.PIVA, 4.Indirizzo, 5.ATECO, 6.Ragione Sociale, 7.Nota Extra, 8.Testo Raw
+        return f, d, piva, ind, ateco, rag_soc, info_extra, testo
 
     except Exception as e:
-        # Restituiamo 5 valori anche in caso di errore per non rompere l'unpacking in app.py
-        return "Errore", "Errore", "Errore", f"AI Exception: {str(e)}", testo
-
-
-
+        # In caso di errore, restituiamo comunque 8 valori per non rompere app.py
+        return "Errore", "Errore", "Errore", "Errore", "Errore", "Errore", f"AI Exception: {str(e)}", testo
 
 def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
     """
-    Funzione coordinatrice: cerca il testo e lo passa all'AI.
-    Deve restituire esattamente 5 valori.
+    Funzione coordinatrice che deve anch'essa restituire 8 valori.
     """
-    # 1. Ottieni il testo da DuckDuckGo
-    testo_grezzo = cerca_testo_online(ragione_sociale) 
+    testo_grezzo = cerca_testo_online(ragione_sociale)
     
-    # Se il testo è vuoto o c'è un errore di connessione
     if not testo_grezzo or "Errore" in testo_grezzo:
-        # Restituiamo 5 valori di "N.D." per evitare il crash
-        return "N.D.", "N.D.", "N.D.", "Ricerca fallita", testo_grezzo
+        return "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "N.D.", "Ricerca fallita", testo_grezzo
         
-    # 2. Passa all'AI (che ora restituisce 5 valori)
     return estrai_con_ai(testo_grezzo, api_key)
 
