@@ -10,6 +10,7 @@ import random
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Import moduli locali
+from style_utils import applica_stile_tabella
 from mapping import ATECO_MAP 
 from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_per_nome
 
