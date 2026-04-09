@@ -287,6 +287,7 @@ def estrai_con_ai(testo, api_key):
     1. SE MANCANO DATI: Usa sempre "N.D.", non usare puntini, spazi o "non specificato".
     2. FATTURATO: Converti sempre in formato decimale italiano con simbolo Euro (es. 1.300.000 €). 
        Se trovi "1.3 M €" scrivi "1.300.000 €". Se trovi un range, scrivi "300.000 - 600.000 €".
+       Se presente, indica l'anno a cui fa riferimento il fatturato tra parentesi (es. "1.300.000 € (2023)").
     3. DIPENDENTI: Solo numeri o range (es. "5" o "2-5").
     4. FONTI: Identifica il dominio dal tag [DOMINIO.IT].
 
