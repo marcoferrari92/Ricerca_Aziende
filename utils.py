@@ -29,7 +29,7 @@ def scrape_sito_aziendale(url):
     if not url.startswith('http'): url = 'http://' + url
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy"]
+    suffixes = ["", "/contatti", "/chi-siamo", "/privacy-policy", "/contacts", "/about", "/home"]
     piva_f, email_f = "Non trovata", "Non trovata"
     piva_pattern = r'(?:IT|P\.IVA|P\.I\.)?\s?(\d{11})'
 
