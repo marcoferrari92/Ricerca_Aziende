@@ -29,7 +29,7 @@ if 'results' not in st.session_state:
 with st.sidebar:
     st.header("🔑 Accesso API")
     user_api_key = st.text_input("Inserisci Google API Key", type="password", help="Necessaria per Google Places")
-    
+    openai_api_key = st.text_input("OpenAI API Key", type="password", help="Necessaria per analisi avanzata AI")
     st.divider()
     
     st.header("⚙️ Parametri di Ricerca")
