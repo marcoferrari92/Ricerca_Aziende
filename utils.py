@@ -220,29 +220,40 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
-    query_string = f"{ragione_sociale} fatturato"
-    query_url = f"https://www.google.com/search?q={query_string}"
+    # DuckDuckGo usa il parametro 'q' per la ricerca
+    query_string = f"{ragione_sociale} {indirizzo} fatturato dipendenti".replace(" ", "+")
+    # Usiamo la versione "html" di DuckDuckGo che è più leggera e bot-friendly
+    query_url = f"https://html.duckduckgo.com/html/?q={query_string}"
     
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
     }
 
     try:
-        res = requests.get(query_url, headers=headers, timeout=10)
+        # Importante: DuckDuckGo a volte richiede un piccolo delay o sessione
+        res = requests.get(query_url, headers=headers, timeout=15)
+        
         if res.status_code != 200:
-            return "Errore", "Errore", f"ERRORE HTTP {res.status_code}: Google ha bloccato il bot."
+            return "N.D.", "N.D.", f"Errore HTTP {res.status_code}"
 
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # Estraiamo il testo pulendo i tag inutili per il debug
-        for script_or_style in soup(["script", "style", "header", "footer", "nav"]):
-            script_or_style.decompose()
+        # In DuckDuckGo HTML, i risultati sono spesso in classi 'result__snippet'
+        snippets = soup.find_all('a', class_='result__snippet')
+        if not snippets:
+            # Fallback se la struttura cambia: prendiamo tutto il testo dei div dei risultati
+            snippets = soup.find_all('div', class_='result__body')
+            
+        testo_completo = " ".join([s.get_text() for s in snippets])
 
-        # Testo normalizzato (rimuove doppi spazi e tab)
-        testo_completo = " ".join(soup.get_text(separator=' ').split())
+        # Se non trova snippet, proviamo il testo grezzo della pagina
+        if len(testo_completo) < 100:
+            testo_completo = soup.get_text(separator=' ', strip=True)
 
-        # Le tue Regex attuali
-        regex_fatturato = r'(?i)(?:Fatturato|€)\s*[:\s-]{0,3}([\d\.]+)\s?(?:€|euro|milioni|mln)?'
+        # --- REGEX (Le stesse che avevi, ma ottimizzate) ---
+        regex_fatturato = r'(?i)(?:Fatturato|€)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
         regex_dipendenti = r'(?i)(?:Dipendenti|personale)\s*[:\s-]{0,3}(\d+)'
 
         fatt_match = re.search(regex_fatturato, testo_completo)
@@ -254,9 +265,8 @@ def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
         if val_fatt != "N.D." and "€" not in val_fatt:
             val_fatt = f"€ {val_fatt}"
 
-        # RESTITUIAMO 2000 CARATTERI: i primi 500 sono spesso inutili, il succo è dopo
         return val_fatt, val_dip, testo_completo[:2000]
 
     except Exception as e:
-        return "Errore", "Errore", f"ECCEZIONE: {str(e)}"
+        return "Errore", "Errore", f"Eccezione DuckDuckGo: {str(e)}"
 
