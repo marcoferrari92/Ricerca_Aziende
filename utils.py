@@ -225,47 +225,31 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0'
 })
 
-def cerca_testo_online(ragione_sociale, indirizzo="", max_retry=3):
-    
-    for attempt in range(max_retry):
+# --- 1. CERCA TESTO ONLINE ---
+def cerca_testo_online(ragione_sociale, max_retry=3):
+    """
+    Cerca testi online relativi a 'fatturato' e 'dipendenti' usando DuckDuckGo Lite.
+    Restituisce una stringa concatenata dei risultati.
+    """
+    query = ragione_sociale.replace(" ", "+") + "+fatturato+dipendenti"
+    url = f"https://lite.duckduckgo.com/lite/?q={query}"
+
+    for _ in range(max_retry):
         try:
-            # 1️⃣ Tentativo FatturatoItalia.it
-            slug = ragione_sociale.lower().replace(" ", "-").replace(".", "")
-            url = f"https://www.fatturatoitalia.it/azienda/{slug}"
             res = session.get(url, timeout=10)
-
-            if res.status_code == 200 and len(res.text) > 1000:
-                soup = BeautifulSoup(res.text, "html.parser")
-                # Prendiamo il testo del blocco principale dei dati
-                main_div = soup.find("div", class_="company-info") or soup
-                testo = main_div.get_text(" ", strip=True)
-                fatt, dip = estrai_dati(testo)
-                return fatt, dip, testo[:2000]
-
-            # 2️⃣ Tentativo aziende.it
-            url = f"https://www.aziende.it/{slug}"
-            res = session.get(url, timeout=10)
-            if res.status_code == 200 and len(res.text) > 3000:
-                soup = BeautifulSoup(res.text, "html.parser")
-                testo = soup.get_text(" ", strip=True)
-                fatt, dip = estrai_dati(testo)
-                return fatt, dip, testo[:4000]
-
-            # 3️⃣ Fallback DuckDuckGo Lite
-            query = ragione_sociale.replace(" ", "+")
-            search_url = f"https://lite.duckduckgo.com/lite/?q={query}"
-            res = session.get(search_url, timeout=10)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                risultati = [a.text.strip() for a in soup.find_all("a") if len(a.text.strip()) > 20]
-                testo = " ".join(risultati)
-                fatt, dip = estrai_dati(testo)
-                return fatt, dip, testo[:4000]
-
-        except Exception as e:
-            time.sleep(1 + attempt)
-
-    return "N.D.", "N.D.", "Nessuna informazione trovata"
+                risultati = []
+                for a in soup.find_all("a"):
+                    text = a.get_text(strip=True)
+                    if len(text) > 20:
+                        risultati.append(text)
+                if risultati:
+                    return " ".join(risultati)
+            time.sleep(1)
+        except:
+            time.sleep(1)
+    return ""
 
 
 # --- 5. ESTRAZIONE AI ---
