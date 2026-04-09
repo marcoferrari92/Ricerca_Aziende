@@ -218,159 +218,40 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
     return piva_f, email_f, testo_per_ai[:6000], debug_final
 
 
-
-import requests
-from bs4 import BeautifulSoup
-import re
-
-# 1. Creiamo la sessione a livello globale (fuori dalla funzione)
-# Questo oggetto manterrà i cookie per tutte le chiamate successive
-session = requests.Session()
-
-import requests
-from bs4 import BeautifulSoup
-import re
-import time
-
-# Session globale per riusare connessione e headers
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
-})
-
-import requests
-from bs4 import BeautifulSoup
-import re
-import time
-
-# Session globale per riusare connessione e headers
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7'
-})
-
-import requests
-from bs4 import BeautifulSoup
-import re
-import time
-
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0'
-})
-
-import requests
-from bs4 import BeautifulSoup
-import time
-
-session = requests.Session()
-session.headers.update({'User-Agent': 'Mozilla/5.0'})
-
+# --- 4. RICERCA ONLINE (DuckDuckGo Lite) ---
 def cerca_testo_online(ragione_sociale, max_retry=2):
-    query = ragione_sociale.replace(" ", "+")
+    query = ragione_sociale.replace(" ", "+") + "+fatturato+dipendenti"
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
-
     for _ in range(max_retry):
         try:
             res = session.get(url, timeout=10)
-            if res.status_code != 200:
-                time.sleep(1)
-                continue
-
-            soup = BeautifulSoup(res.text, "html.parser")
-
-            risultati = []
-            for a in soup.find_all("a"):
-                txt = a.text.strip()
-                if len(txt) > 20:
-                    risultati.append(txt)
-
-            return " ".join(risultati)
-
-        except:
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
+                # Estraiamo i testi dei risultati di ricerca
+                risultati = [t.get_text() for t in soup.find_all("td", class_="result-snippet")]
+                return " ".join(risultati)
             time.sleep(1)
-
+        except: time.sleep(1)
     return ""
 
-
-
-
-
-import requests
-from bs4 import BeautifulSoup
-import openai
-import time
-import json
-
-# Session globale
-session = requests.Session()
-session.headers.update({'User-Agent': 'Mozilla/5.0'})
-
-# 1️⃣ Funzione per cercare testo online
-def cerca_testo_online(ragione_sociale, max_retry=2):
-    """
-    Cerca testi relativi all'azienda su DuckDuckGo Lite
-    """
-    query = ragione_sociale.replace(" ", "+")
-    url = f"https://lite.duckduckgo.com/lite/?q={query}"
-
-    for _ in range(max_retry):
-        try:
-            res = session.get(url, timeout=10)
-            if res.status_code != 200:
-                time.sleep(1)
-                continue
-
-            soup = BeautifulSoup(res.text, "html.parser")
-            risultati = [a.text.strip() for a in soup.find_all("a") if len(a.text.strip()) > 20]
-            return " ".join(risultati)
-
-        except:
-            time.sleep(1)
-
-    return ""
-
-
+# --- 5. ESTRAZIONE AI ---
 def estrai_con_ai(testo, api_key):
-    """
-    Usa OpenAI per estrarre fatturato e numero dipendenti dal testo (Versione Aggiornata)
-    """
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key) # Inizializzazione client
-    
-    prompt = f"""
-    Estrai dal testo le informazioni finanziarie principali.
-    Testo: \"\"\"{testo}\"\"\"
-    Restituisci in formato JSON:
-    {{
-        "fatturato": "<valore numerico o N.D.>",
-        "dipendenti": "<numero o N.D.>"
-    }}
-    """
+    client = OpenAI(api_key=api_key)
+    prompt = f"Estrai fatturato e dipendenti dal testo in JSON: {{'fatturato': '...', 'dipendenti': '...'}}. Testo: {testo}"
     try:
-        # Chiamata aggiornata
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0
+            temperature=0,
+            response_format={ "type": "json_object" }
         )
-        # Accesso al contenuto aggiornato
-        contenuto = response.choices[0].message.content.strip()
-        
-        dati = json.loads(contenuto)
+        dati = json.loads(response.choices[0].message.content)
         return dati.get("fatturato", "N.D."), dati.get("dipendenti", "N.D."), testo[:2000]
     except Exception as e:
         return "Errore", "Errore", f"AI exception: {str(e)}"
 
-
-# 3️⃣ Funzione principale
-def cerca_info_finanziarie_per_nome(ragione_sociale, api_key, max_retry=2):
-    """
-    Restituisce (fatturato, dipendenti, testo_estratto)
-    """
-    testo = cerca_testo_online(ragione_sociale, max_retry)
-    if not testo:
-        return "N.D.", "N.D.", "Nessun testo trovato"
+# --- 6. FUNZIONE PRINCIPALE PER BOTTONE 2 ---
+def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
+    testo = cerca_testo_online(ragione_sociale)
+    if not testo: return "N.D.", "N.D.", "Nessun risultato trovato online"
     return estrai_con_ai(testo, api_key)
