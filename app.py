@@ -4,11 +4,12 @@ import folium
 from streamlit_folium import st_folium
 import urllib3
 import time
+import random
 
 # Disabilita avvisi SSL per evitare log fastidiosi
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import dei moduli locali
+# Import dei moduli locali (Assicurati che utils.py sia aggiornato con DuckDuckGo)
 from mapping import ATECO_MAP 
 from utils import fetch_data_google, scrape_sito_aziendale, cerca_info_finanziarie_per_nome
 
@@ -37,6 +38,7 @@ with st.sidebar:
 
     if st.button("🗑️ Svuota Database", use_container_width=True):
         st.session_state.results = pd.DataFrame()
+        st.session_state.crawler_log = ""
         st.rerun()
 
 # --- LAYOUT PRINCIPALE ---
@@ -76,7 +78,6 @@ with col_ctrl:
             with st.status("Ricerca su Google Maps...") as status:
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
-                # Inizializziamo le colonne vuote per evitare errori di visualizzazione
                 cols_to_add = ['P.IVA (Crawler)', 'Email (Crawler)', 'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'Nota/Fonte (AI)']
                 for col in cols_to_add:
                     df[col] = "N.D."
@@ -92,7 +93,6 @@ if not st.session_state.results.empty:
     st.subheader("3. Database Risultati")
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon', 'testo_raw'], errors='ignore'), use_container_width=True)
     
-    # Pulsanti di azione
     btn_col1, btn_col2, btn_col3 = st.columns(3)
 
     st.write("") 
@@ -104,8 +104,6 @@ if not st.session_state.results.empty:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
-        
-            # Inizializzazione log
             st.session_state.crawler_log = "🚀 **Inizio Scansione...**\n\n"
         
             with log_placeholder.expander("🔍 Debug Estrazione Numeri (Live)", expanded=True):
@@ -113,21 +111,18 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     if row['Sito Web'] != 'N.D.':
-                        # Chiamata funzione crawler
                         p_web, e_web, testo_web, debug_info = scrape_sito_aziendale(row['Sito Web'])
                     
                         df_work.at[idx, 'P.IVA (Crawler)'] = p_web
                         df_work.at[idx, 'Email (Crawler)'] = e_web
                         df_work.at[idx, 'testo_raw'] = testo_web
                     
-                        # Aggiornamento log
                         new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
                         st.session_state.crawler_log += new_entry
                         debug_area.markdown(st.session_state.crawler_log)
 
                     bar.progress((i + 1) / len(df_work))
 
-                # Salvataggio e aggiornamento finale (FUORI dal ciclo for)
                 st.session_state.results = df_work
                 st.success("✅ Crawler completato!")
                 st.rerun()
@@ -135,20 +130,18 @@ if not st.session_state.results.empty:
     # --- BOTTONE 2: RICERCA PER NOME ---
     with btn_col2:
         if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
+            # Svuota i log di questa sessione prima di iniziare
+            st.session_state.debug_text_log = ""
+            st.session_state.summary_log = ""
+            
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
             
-            # Creazione Tab per pulizia visiva
             tab1, tab2 = st.tabs(["📊 Riepilogo", "🔍 Ispezione Testo"])
             with tab1:
                 summary_area = st.empty()
             with tab2:
                 debug_area = st.empty()
-
-            if 'debug_text_log' not in st.session_state:
-                st.session_state.debug_text_log = ""
-            if 'summary_log' not in st.session_state:
-                st.session_state.summary_log = ""
 
             for i, (idx, row) in enumerate(df_work.iterrows()):
                 nome = row['Ragione Sociale']
@@ -156,22 +149,21 @@ if not st.session_state.results.empty:
                 
                 bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
                 
-                # Chiamata alla funzione snippet
+                # Chiamata alla funzione snippet (ora su DuckDuckGo)
                 fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, indirizzo)
                 
                 df_work.at[idx, 'Fatturato (AI)'] = fatt
                 df_work.at[idx, 'Dipendenti (AI)'] = dip
                 
-                # Aggiornamento log grafici
                 st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
                 st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
                 
                 summary_area.markdown(st.session_state.summary_log)
                 debug_area.markdown(st.session_state.debug_text_log)
                 
-                time.sleep(4) 
+                # Pausa variabile per simulare comportamento umano
+                time.sleep(random.uniform(4, 7)) 
 
-            # Aggiornamento finale (FUORI dal ciclo for)
             st.session_state.results = df_work
             st.success("Analisi completata con successo!")
             st.rerun()
