@@ -114,7 +114,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
     # --- FUNZIONE DI RICERCA AGGRESSIVA AGGIORNATA ---
     def estrai_piva_ovunque(sorgente):
-        """Estrae sequenze di 11 cifre, anche precedute da IT, e valida"""
+        """Estrae sequenze di 11 cifre e le restituisce PULITE (senza IT)"""
         # 1. Cerca sequenze numeriche pure di 11 cifre
         candidati = re.findall(r'\b\d{11}\b', sorgente)
         
@@ -127,9 +127,11 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
         candidati += ["".join(filter(str.isdigit, c)) for c in candidati_spazi]
 
         for c in set(candidati):
-            if is_valid_piva(c):
-                # Restituiamo il formato standard con IT per uniformità
-                return f"IT{c}"
+            # Pulizia finale di sicurezza: tiene solo le cifre
+            solo_cifre = "".join(filter(str.isdigit, c))
+            if is_valid_piva(solo_cifre):
+                # RESTITUISCE SOLO LE 11 CIFRE (Senza IT)
+                return solo_cifre
         return None
 
     while to_visit and len(visited) < 5:
@@ -165,11 +167,11 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             if len(testo_per_ai) < 6000:
                 testo_per_ai += f" [URL: {current}] " + text_full
 
-            if email_f == "Non votata":
+            if email_f == "Non trovata": # Corretto da "Non votata"
                 em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text_full)
                 if em: email_f = em.group(0).lower()
 
-            # 2.5 CERCA NEL TESTO PULITO (Se non ancora trovata nell'HTML)
+            # 2.5 CERCA NEL TESTO PULITO
             if piva_f == "Non trovata":
                 found = estrai_piva_ovunque(text_full)
                 if found:
@@ -200,6 +202,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             options.add_argument("--headless")
             driver = webdriver.Chrome(options=options)
             driver.get(url)
+            import time
             time.sleep(3) 
             
             source = driver.page_source
