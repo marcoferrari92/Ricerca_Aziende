@@ -240,7 +240,7 @@ def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo="", max_retry=3):
                 main_div = soup.find("div", class_="company-info") or soup
                 testo = main_div.get_text(" ", strip=True)
                 fatt, dip = estrai_dati(testo)
-                return fatt, dip, testo[:4000]
+                return fatt, dip, testo[:2000]
 
             # 2️⃣ Tentativo aziende.it
             url = f"https://www.aziende.it/{slug}"
