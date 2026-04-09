@@ -90,13 +90,21 @@ def is_valid_piva(piva):
 
 # --- FUNZIONE DI ESTRAZIONE CORE ---
 def cerca_piva(testo):
-    if not testo: return None
-    # Regex migliorata: cerca prefissi comuni e isola 11 cifre
-    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|Partita\s*IVA|P\s*I|C\.F\.|CF)[:\s-]{1,6}(\d{11})\b'
+    if not testo: 
+        return None
+    
+    # Regex potenziata: 
+    # - (?i) rende tutto case-insensitive
+    # - Cerca P.IVA, VAT, Partita IVA, P.I, CF, C.F., Codice Fiscale
+    # - Gestisce spazi, punti e simboli come / o : tra il tag e il numero
+    piva_pattern = r'(?i)(?:P\.?\s*IVA|VAT|Partita\s*IVA|P\s*I|C\.F\.|CF|Codice\s*Fiscale)[:\s/-]{1,6}(\d{11})\b'
+    
     matches = re.findall(piva_pattern, testo)
+    
     for m in matches:
         if is_valid_piva(m):
             return m
+            
     return None
 
 def scrape_sito_aziendale(url, ragione_sociale=""):
