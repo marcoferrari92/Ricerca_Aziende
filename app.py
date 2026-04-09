@@ -99,82 +99,84 @@ if not st.session_state.results.empty:
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
 
+    # --- BOTTONE 1: CRAWLER WEB ---
     with btn_col1:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
             bar = progress_placeholder.progress(0)
         
-            # Puliamo il log precedente all'avvio di una nuova scansione
+            # Inizializzazione log
             st.session_state.crawler_log = "🚀 **Inizio Scansione...**\n\n"
         
-            # Creiamo l'expander che rimarrà visibile
             with log_placeholder.expander("🔍 Debug Estrazione Numeri (Live)", expanded=True):
                 debug_area = st.empty()
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     if row['Sito Web'] != 'N.D.':
-                        # Riceviamo i 4 valori dalla tua funzione aggiornata
+                        # Chiamata funzione crawler
                         p_web, e_web, testo_web, debug_info = scrape_sito_aziendale(row['Sito Web'])
                     
                         df_work.at[idx, 'P.IVA (Crawler)'] = p_web
                         df_work.at[idx, 'Email (Crawler)'] = e_web
                         df_work.at[idx, 'testo_raw'] = testo_web
                     
-                        # Accumuliamo il log nello session_state
+                        # Aggiornamento log
                         new_entry = f"**Azienda: {row['Ragione Sociale']}**\n{debug_info}\n\n---\n"
                         st.session_state.crawler_log += new_entry
-                    
-                        # Mostriamo l'aggiornamento in tempo reale
                         debug_area.markdown(st.session_state.crawler_log)
 
                     bar.progress((i + 1) / len(df_work))
 
-                # Aggiorniamo i risultati finali
+                # Salvataggio e aggiornamento finale (FUORI dal ciclo for)
                 st.session_state.results = df_work
                 st.success("✅ Crawler completato!")
-                # Nota: NON chiamare st.rerun() qui se vuoi che l'expander resti aperto con i dati correnti
-    
-          with btn_col2:
-            if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
-                df_work = st.session_state.results.copy()
-                bar = progress_placeholder.progress(0)
-        
-                with log_placeholder.expander("📊 ISPEZIONE TESTO GOOGLE (Debug)", expanded=True):
-                    log_area = st.empty()
-                    # Usiamo lo session_state per non far sparire il log
-                    if 'debug_text_log' not in st.session_state:
-                        st.session_state.debug_text_log = ""
+                st.rerun()
 
-                    for i, (idx, row) in enumerate(df_work.iterrows()):
-                        nome = row['Ragione Sociale']
-                        indirizzo = row.get('Indirizzo', '')
-                
-                        bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
-                
-                        fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, indirizzo)
-                
-                        df_work.at[idx, 'Fatturato (AI)'] = fatt
-                        df_work.at[idx, 'Dipendenti (AI)'] = dip
-                
-                        # Aggiungiamo al log visibile
-                        st.session_state.debug_text_log += f"""
-                        **AZIENDA:** {nome}
-                        **RISULTATO:** Fatt: {fatt} | Dip: {dip}
-                        **COSA VEDE IL BOT (Snippet):** > {testo_estratto}...
-                
-                        ---
-                        """
-                        log_area.markdown(st.session_state.debug_text_log)
-                
-                        time.sleep(4) 
+    # --- BOTTONE 2: RICERCA PER NOME ---
+    with btn_col2:
+        if st.button("🤖 2. RICERCA PER NOME AZIENDA", use_container_width=True, type="primary"):
+            df_work = st.session_state.results.copy()
+            bar = progress_placeholder.progress(0)
+            
+            # Creazione Tab per pulizia visiva
+            tab1, tab2 = st.tabs(["📊 Riepilogo", "🔍 Ispezione Testo"])
+            with tab1:
+                summary_area = st.empty()
+            with tab2:
+                debug_area = st.empty()
 
-                        st.session_state.results = df_work
-                        st.rerun()
- 
-                    st.session_state.results = df_work
-                    st.success("Analisi completata con successo!")
-                    st.rerun() 
+            if 'debug_text_log' not in st.session_state:
+                st.session_state.debug_text_log = ""
+            if 'summary_log' not in st.session_state:
+                st.session_state.summary_log = ""
 
+            for i, (idx, row) in enumerate(df_work.iterrows()):
+                nome = row['Ragione Sociale']
+                indirizzo = row.get('Indirizzo', '')
+                
+                bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
+                
+                # Chiamata alla funzione snippet
+                fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, indirizzo)
+                
+                df_work.at[idx, 'Fatturato (AI)'] = fatt
+                df_work.at[idx, 'Dipendenti (AI)'] = dip
+                
+                # Aggiornamento log grafici
+                st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
+                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
+                
+                summary_area.markdown(st.session_state.summary_log)
+                debug_area.markdown(st.session_state.debug_text_log)
+                
+                time.sleep(4) 
+
+            # Aggiornamento finale (FUORI dal ciclo for)
+            st.session_state.results = df_work
+            st.success("Analisi completata con successo!")
+            st.rerun()
+
+    # --- BOTTONE 3: DOWNLOAD ---
     with btn_col3:
         csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
         st.download_button("📥 SCARICA DATABASE CSV", csv, "export_aziende.csv", "text/csv", use_container_width=True)
