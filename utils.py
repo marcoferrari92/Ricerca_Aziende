@@ -226,7 +226,7 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0'
 })
 
-def cerca_info_finanziarie_per_nome(ragione_sociale, api_key=None):
+def cerca_testo_online(ragione_sociale):
     """
     Restituisce SOLO il testo visto dal bot.
     Pulisce il nome e gestisce il blocco 202.
@@ -276,38 +276,67 @@ from openai import OpenAI
 
 def estrai_con_ai(testo, api_key):
     """
-    Estrae fatturato e dipendenti dal testo usando GPT-4 e parsing robusto.
-    Restituisce (fatturato, dipendenti, testo_estratto)
+    Usa GPT-4 per estrarre dati strutturati dal testo grezzo di DuckDuckGo.
     """
     client = OpenAI(api_key=api_key)
     
     prompt = f"""
-Estrai i dati finanziari dal seguente testo in formato JSON:
-{{ "fatturato": "...", "dipendenti": "..." }}
-Se non trovi i dati, usa "N.D.".
-Testo: {testo}
-"""
+    Analizza il seguente testo estratto da vari siti di database aziendali e recupera le informazioni richieste.
+    
+    TESTO:
+    \"\"\"{testo}\"\"\"
+    
+    REGOLE DI ESTRAZIONE:
+    1. FATTURATO: Cerca il valore numerico più recente. Se trovi un range o un'annualità, riportali (es. "850.000€ (2022)").
+    2. DIPENDENTI: Indica il numero esatto o il range trovato (es. "6-9").
+    3. ATECO: Estrai il codice numerico (es. "25.11").
+    4. RAGIONE SOCIALE: Riporta il nome ufficiale trovato nel testo.
+    5. INDIRIZZO: Estrai l'indirizzo completo se presente.
+
+    RESTITUISCI ESCLUSIVAMENTE UN OGGETTO JSON:
+    {{
+        "fatturato": "valore o N.D.",
+        "dipendenti": "valore o N.D.",
+        "ateco": "valore o N.D.",
+        "ragione_sociale": "valore o N.D.",
+        "indirizzo": "valore o N.D."
+    }}
+    """
+    
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini", # Più veloce ed economico per estrazioni massive
             messages=[{"role": "user", "content": prompt}],
-            temperature=0
+            temperature=0,
+            response_format={ "type": "json_object" }
         )
-
-        content = response.choices[0].message.content.strip()
-        # Rimuoviamo eventuali backticks
-        content = content.replace("```json", "").replace("```", "").strip()
         
-        # Regex per catturare il primo oggetto JSON
-        match = re.search(r'\{.*?\}', content)
-        if not match:
-            return "N.D.", "N.D.", testo[:2000]
+        dati = json.loads(response.choices[0].message.content)
         
-        dati = json.loads(match.group())
-        fatturato = dati.get("fatturato", "N.D.")
-        dipendenti = dati.get("dipendenti", "N.D.")
-        return fatturato, dipendenti, testo[:2000]
+        # Restituiamo i campi principali e usiamo gli altri come nota di controllo
+        f = dati.get("fatturato", "N.D.")
+        d = dati.get("dipendenti", "N.D.")
+        # Creiamo una stringa di controllo per il log
+        info_extra = f"Sociale: {dati.get('ragione_sociale')} | Indirizzo: {dati.get('indirizzo')} | ATECO: {dati.get('ateco')}"
+        
+        return f, d, info_extra
 
     except Exception as e:
-        return "Errore", "Errore", f"AI exception: {str(e)}"
+        return "Errore", "Errore", f"AI Exception: {str(e)}"
+
+
+
+
+def cerca_info_finanziarie_per_nome(ragione_sociale, api_key):
+    """
+    Funzione principale che coordina ricerca e AI.
+    """
+    # 1. Recupera il testo (la funzione che abbiamo testato prima)
+    testo_grezzo = cerca_testo_online(ragione_sociale) 
+    
+    if "Errore" in testo_grezzo or "Pagina vuota" in testo_grezzo:
+        return "N.D.", "N.D.", testo_grezzo
+        
+    # 2. Passa all'AI per il parsing
+    return estrai_con_ai(testo_grezzo, api_key)
 
