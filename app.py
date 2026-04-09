@@ -324,28 +324,4 @@ if not st.session_state.results.empty:
             st.success("Analisi completata con successo!")
             st.rerun()
 
-    # --- BOTTONE 3: DOWNLOAD ---
-    with btn_col3:
-        csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA DATABASE CSV", csv, "export_aziende.csv", "text/csv", use_container_width=True)
-                
-                df_work.at[idx, 'Fatturato (AI)'] = fatt
-                df_work.at[idx, 'Dipendenti (AI)'] = dip
-                
-                st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
-                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
-                
-                summary_area.markdown(st.session_state.summary_log)
-                debug_area.markdown(st.session_state.debug_text_log)
-                
-                # Pausa variabile per simulare comportamento umano
-                time.sleep(random.uniform(4, 7)) 
 
-            st.session_state.results = df_work
-            st.success("Analisi completata con successo!")
-            st.rerun()
-
-    # --- BOTTONE 3: DOWNLOAD ---
-    with btn_col3:
-        csv = st.session_state.results.to_csv(index=False, encoding='utf-8-sig').encode('utf-8')
-        st.download_button("📥 SCARICA DATABASE CSV", csv, "export_aziende.csv", "text/csv", use_container_width=True)
