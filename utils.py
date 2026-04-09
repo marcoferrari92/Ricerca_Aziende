@@ -78,9 +78,13 @@ from urllib.parse import urljoin
 import time
 
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
-def is_valid_piva(piva):
-    if not piva or len(piva) != 11 or not piva.isdigit():
+def is_valid_piva(piva_raw):
+    # Pulizia: rimuove "IT" e qualsiasi carattere non numerico
+    piva = "".join(filter(str.isdigit, str(piva_raw)))
+    
+    if not piva or len(piva) != 11:
         return False
+        
     s = sum(int(piva[i]) for i in range(0, 10, 2))
     for i in range(1, 10, 2):
         temp = int(piva[i]) * 2
@@ -105,19 +109,24 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
     testo_per_ai = ""
     log_debug = []
 
-    # --- FUNZIONE DI RICERCA AGGRESSIVA ---
+    # --- FUNZIONE DI RICERCA AGGRESSIVA AGGIORNATA ---
     def estrai_piva_ovunque(sorgente):
-        """Estrae qualsiasi sequenza di 11 cifre e restituisce la prima valida"""
-        # Trova tutte le sequenze di 11 cifre pure
+        """Estrae sequenze di 11 cifre, anche precedute da IT, e valida"""
+        # 1. Cerca sequenze numeriche pure di 11 cifre
         candidati = re.findall(r'\b\d{11}\b', sorgente)
         
-        # Prova anche a cercare numeri con spazi (es. 012 345 678 90) e li pulisce
-        candidati_con_spazi = re.findall(r'\b(?:\d\s*){11}\b', sorgente)
-        candidati += ["".join(filter(str.isdigit, c)) for c in candidati_con_spazi]
+        # 2. Cerca sequenze che iniziano con IT (es. IT12345678901)
+        candidati_it = re.findall(r'(?i)\bIT\s*(\d{11})\b', sorgente)
+        candidati += candidati_it
+        
+        # 3. Cerca numeri con spazi (es. 012 345 678 90 o IT 012 345 678 90)
+        candidati_spazi = re.findall(r'(?i)\b(?:IT\s*)?(?:\d\s*){11}\b', sorgente)
+        candidati += ["".join(filter(str.isdigit, c)) for c in candidati_spazi]
 
         for c in set(candidati):
             if is_valid_piva(c):
-                return c
+                # Restituiamo il formato standard con IT per uniformità
+                return f"IT{c}"
         return None
 
     while to_visit and len(visited) < 5:
@@ -131,8 +140,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             
             html = res.text
             
-            # 1. TENTATIVO IMMEDIATO SU HTML GREZZO (Prima di BeautifulSoup)
-            # Spesso la P.IVA è nei commenti o in script che BS4 potrebbe ignorare
+            # 1. TENTATIVO IMMEDIATO SU HTML GREZZO
             if piva_f == "Non trovata":
                 found = estrai_piva_ovunque(html)
                 if found:
@@ -154,9 +162,16 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             if len(testo_per_ai) < 6000:
                 testo_per_ai += f" [URL: {current}] " + text_full
 
-            if email_f == "Non trovata":
+            if email_f == "Non votata":
                 em = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text_full)
                 if em: email_f = em.group(0).lower()
+
+            # 2.5 CERCA NEL TESTO PULITO (Se non ancora trovata nell'HTML)
+            if piva_f == "Non trovata":
+                found = estrai_piva_ovunque(text_full)
+                if found:
+                    piva_f = found
+                    log_debug.append(f"[{current}] P.IVA trovata nel testo visibile: {found}")
 
             # Raccolta Link
             for link in soup.find_all('a', href=True):
@@ -173,7 +188,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             log_debug.append(f"Errore su {current}: {str(e)}")
             continue
 
-    # --- 3. FALLBACK SELENIUM (ULTIMA SPIAGGIA) ---
+    # --- 3. FALLBACK SELENIUM ---
     if piva_f == "Non trovata":
         try:
             from selenium import webdriver
@@ -182,7 +197,7 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
             options.add_argument("--headless")
             driver = webdriver.Chrome(options=options)
             driver.get(url)
-            time.sleep(3) # Tempo per caricare script dinamici
+            time.sleep(3) 
             
             source = driver.page_source
             found = estrai_piva_ovunque(source)
@@ -197,22 +212,6 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
     return piva_f, email_f, testo_per_ai[:6000], debug_final
 
 
-# --- FUNZIONE EXTRA PER FATTURATO (Ricerca Esterna Gratis) ---
-def get_financial_data(piva):
-    """
-    Tenta di recuperare fatturato e dipendenti da aggregatori gratuiti usando la P.IVA
-    """
-    if piva == "Non trovata": return "N.D.", "N.D."
-    
-    try:
-        # Esempio su ReportAziende (sito molto semplice da scansionare)
-        search_url = f"https://www.reportaziende.it/ricerca?qs={piva}"
-        res = requests.get(search_url, timeout=10)
-        # Qui andrebbe aggiunto il parsing della tabella risultati
-        # Per ora restituiamo un placeholder
-        return "Da analizzare su ReportAziende", "Disponibile online"
-    except:
-        return "Errore ricerca", "Errore ricerca"
 
 
 
