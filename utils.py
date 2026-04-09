@@ -219,11 +219,22 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 
+import requests
+from bs4 import BeautifulSoup
+import re
+
+# 1. Creiamo la sessione a livello globale (fuori dalla funzione)
+# Questo oggetto manterrà i cookie per tutte le chiamate successive
+session = requests.Session()
+
 def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
-    # DuckDuckGo HTML è perfetto per lo scraping semplice
-    query_string = f"{ragione_sociale} fatturato"
+    # Pulizia della query: usiamo solo nome azienda e keyword "fatturato"
+    query_string = f"{ragione_sociale} fatturato".replace(" ", "+")
+    
+    # URL DuckDuckGo HTML con filtro regione Italia
     query_url = f"https://duckduckgo.com/html/?q={query_string}&kl=it-it"
     
+    # Headers evoluti per simulare un browser reale
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -235,36 +246,43 @@ def cerca_info_finanziarie_per_nome(ragione_sociale, indirizzo=""):
     }
 
     try:
-        # Aumentiamo leggermente il timeout per DuckDuckGo
-        res = requests.get(query_url, headers=headers, timeout=15)
+        # 2. Usiamo session.get invece di requests.get
+        res = session.get(query_url, headers=headers, timeout=15)
         
         if res.status_code != 200:
             return "N.D.", "N.D.", f"Errore HTTP {res.status_code} (DuckDuckGo)"
 
+        # 3. Parsing del contenuto
         soup = BeautifulSoup(res.text, 'html.parser')
         
-        # DuckDuckGo HTML organizza i risultati in classi 'result__snippet'
+        # Estraiamo gli snippet (i testi brevi sotto i risultati)
         snippets = soup.find_all('a', class_='result__snippet')
         testo_estratto = " ".join([s.get_text() for s in snippets])
 
-        # Se non trova snippet specifici, facciamo il dump del testo centrale
+        # Se DuckDuckGo HTML non restituisce snippet classici, prendiamo il testo della pagina
         if len(testo_estratto) < 100:
+            # Pulizia preventiva dei tag che sporcano il testo
+            for script in soup(["script", "style"]):
+                script.decompose()
             testo_estratto = soup.get_text(separator=' ', strip=True)
 
-        # REGEX: Gestiamo sia il punto che la virgola per i mercati italiani
-        # Esempi: 479.292 o 479,292
-        regex_fatturato = r'(?i)(?:Fatturato|€)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
-        regex_dipendenti = r'(?i)(?:Dipendenti|personale)\s*[:\s-]{0,3}(\d+)'
+        # 4. REGEX POTENZIATE
+        # Gestisce: "Fatturato: 100.000", "€ 100.000", "pari a 100.000 euro"
+        regex_fatturato = r'(?i)(?:Fatturato|€|pari\s+a)\s*[:\s-]{0,3}([\d\.,]+)\s?(?:€|euro|milioni|mln)?'
+        # Gestisce: "Dipendenti: 10", "10 dipendenti"
+        regex_dipendenti = r'(?i)(?:Dipendenti|personale|organico)\s*[:\s-]{0,3}(\d+)'
 
         fatt_match = re.search(regex_fatturato, testo_estratto)
         dip_match = re.search(regex_dipendenti, testo_estratto)
 
-        val_fatt = fatt_match.group(1) if fatt_match else "N.D."
-        val_dip = dip_match.group(1) if dip_match else "N.D."
+        val_fatt = fatt_match.group(1).strip() if fatt_match else "N.D."
+        val_dip = dip_match.group(1).strip() if dip_match else "N.D."
         
-        if val_fatt != "N.D." and "€" not in val_fatt:
+        # Aggiungiamo il simbolo € se abbiamo trovato un numero ma manca il simbolo
+        if val_fatt != "N.D." and "€" not in val_fatt and "euro" not in val_fatt.lower():
             val_fatt = f"€ {val_fatt}"
 
+        # Restituiamo i dati e una porzione di testo per il debug in Streamlit
         return val_fatt, val_dip, testo_estratto[:2000]
 
     except Exception as e:
