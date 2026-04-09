@@ -83,6 +83,8 @@ with col_ctrl:
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             st.rerun()
 
+
+
 # --- TABELLA E AZIONI ---
 if not st.session_state.results.empty:
     st.divider()
