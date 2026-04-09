@@ -172,32 +172,19 @@ def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, testo_sito, api
     
     # Prompt ottimizzato per estrazione e stima intelligente
     prompt = f"""
-    Sei un analista finanziario con accesso a strumenti di ricerca real-time. 
-    L'obiettivo è trovare i dati ufficiali dell'azienda: {nome_azienda}
-    Sede Legale/Indirizzo: {indirizzo}
-    Sito Web di riferimento: {sito}
-    P.IVA trovata dal crawler (da verificare): {piva_crawler}
+    Sei un investigatore economico esperto in aziende italiane (SAS, SRL, SNC).
+    Trova i dati fiscali per: {nome_azienda}
+    Sede: {indirizzo}
+    Sito: {sito}
 
-    TESTO ESTRATTO DAL SITO:
-    ---
-    {testo_sito[:4000]}
-    ---
+    ISTRUZIONI TASSATIVE:
+    1. PARTITA IVA: Cerca nel testo del sito la Partita IVA o il Codice Fiscale (11 cifre). 
+       Se il crawler dice '{piva_crawler}', verificalo. Se è N.D., estrailo dal testo.
+    2. FATTURATO: Cerca il fatturato più recente. 
+    3. NUMERO DIPENDENTI: Cerca il numero di dipendenti.
+    3. NON INVENTARE: Se non trovi la P.IVA nel testo e non sei sicuro, scrivi 'N.D.', ma tenta prima una ricerca profonda basata sulla sede {indirizzo}.
 
-    ISTRUZIONI:
-    1. Trova la PARTITA IVA ufficiale di 11 cifre. Cerca nel testo del sito (footer, privacy policy).
-    2. Se la P.IVA del crawler è valida e presente nel testo, confermala.
-    3. Trova il fatturato 2023 o 2024 e il numero di dipendenti. 
-    4. Se i dati finanziari non sono nel testo, usa la tua conoscenza interna per fornire una stima verosimile.
-    5. La P.IVA deve essere solo numerica (senza 'IT').
-
-    Rispondi esclusivamente in formato JSON:
-    {{
-      "fatturato": "...", 
-      "dipendenti": "...", 
-      "piva": "...", 
-      "fonte": "..."
-    }}
-    Se non trovi nulla, usa 'N.D.'.
+    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}
     """
 
     try:
