@@ -127,8 +127,7 @@ def chiedi_a_openai(nome_azienda, piva_crawler, sito, api_key_openai):
 
     client = OpenAI(api_key=api_key_openai)
     # Ho aggiunto la richiesta esplicita della PIVA nel prompt
-    prompt = f"""Analista finanziario: trova fatturato 2023/24, dipendenti e conferma la Partita IVA per {nome_azienda}, sito {sito}. 
-    Il crawler ha rilevato questa P.IVA: {piva_crawler}.
+    prompt = f"""Analista finanziario: trova fatturato 2023/24, dipendenti e conferma la Partita IVA per {nome_azienda}. 
     Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}. Se ignoto usa 'N.D.'."""
 
     try:
