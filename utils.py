@@ -297,6 +297,7 @@ def estrai_con_ai(testo, api_key):
     4. RAGIONE SOCIALE: Nome ufficiale dell'azienda.
     5. INDIRIZZO: Indirizzo completo.
     6. PARTITA IVA: Cerca il numero di 11 cifre (es. "01234567890").
+    7. FONTI: nomi dei siti da cui hai preso i valori (es. "fatturatoitalia.it"). 
 
     RESTITUISCI ESCLUSIVAMENTE UN OGGETTO JSON:
     {{
@@ -305,7 +306,8 @@ def estrai_con_ai(testo, api_key):
         "ateco": "valore o N.D.",
         "ragione_sociale": "valore o N.D.",
         "indirizzo": "valore o N.D.",
-        "partita_iva": "valore o N.D."
+        "partita_iva": "valore o N.D.",
+        "fonti": "valori o N.D.",
     }}
     """
     
@@ -326,9 +328,10 @@ def estrai_con_ai(testo, api_key):
         ateco = dati.get("ateco", "N.D.")
         rag_soc = dati.get("ragione_sociale", "N.D.")
         ind = dati.get("indirizzo", "N.D.")
+        fonte = dati.get("fonti", "N.D.")
         
         # Stringa sintetica per la colonna Nota/Fonte
-        info_extra = f"CHECK: {rag_soc} | PIVA: {piva} | ATECO: {ateco}"
+        info_extra = f"FONTE: {fonte.upper()}"
         
         # RESTITUIAMO 8 VALORI: 
         # 1.Fatturato, 2.Dipendenti, 3.PIVA, 4.Indirizzo, 5.ATECO, 6.Ragione Sociale, 7.Nota Extra, 8.Testo Raw
