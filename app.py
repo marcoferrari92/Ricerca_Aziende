@@ -297,28 +297,28 @@ if not st.session_state.results.empty:
 
             for i, (idx, row) in enumerate(df_work.iterrows()):
                 nome = row['Ragione Sociale']
-                indirizzo = row.get('Indirizzo', '')
-                
                 bar.progress((i + 1) / len(df_work), text=f"Analizzando: {nome}")
-                
-                # Chiamata alla funzione snippet (ora su DuckDuckGo)
+
+                # AI Extraction
                 if not openai_api_key:
-                    st.warning(f"Inserisci la OpenAI API Key per analizzare {nome}")
                     fatt, dip, testo_estratto = "N.D.", "N.D.", "Nessuna chiave OpenAI"
                 else:
                     fatt, dip, testo_estratto = cerca_info_finanziarie_per_nome(nome, api_key=openai_api_key)
-                
-                df_work.at[idx, 'Fatturato (AI)'] = fatt
-                df_work.at[idx, 'Dipendenti (AI)'] = dip
-                
-                st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
-                st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
-                
-                summary_area.markdown(st.session_state.summary_log)
-                debug_area.markdown(st.session_state.debug_text_log)
-                
-                # Pausa variabile per simulare comportamento umano
-                time.sleep(random.uniform(4, 7)) 
+
+                    # Aggiorna dataframe
+                    df_work.at[idx, 'Fatturato (AI)'] = fatt
+                    df_work.at[idx, 'Dipendenti (AI)'] = dip
+                    df_work.at[idx, 'testo_raw'] = testo_estratto
+
+                    # Aggiorna log
+                    st.session_state.summary_log += f"✅ **{nome}** → Fatt: {fatt} | Dip: {dip}\n\n"
+                    st.session_state.debug_text_log += f"**AZIENDA:** {nome}\n**TESTO:** {testo_estratto}\n\n---\n"
+
+                    summary_area.markdown(st.session_state.summary_log)
+                    debug_area.markdown(st.session_state.debug_text_log)
+
+                    # Pausa variabile per simulare comportamento umano
+                    time.sleep(random.uniform(4, 7))
 
             st.session_state.results = df_work
             st.success("Analisi completata con successo!")
