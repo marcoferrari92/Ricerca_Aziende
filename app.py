@@ -159,6 +159,11 @@ if not st.session_state.results.empty:
                     log_area.markdown(history)
                 
                     time.sleep(4) 
+                    with log_area:
+                        st.markdown(f"### 🔍 Ispezione: {nome}")
+                        st.write(f"**Trovato:** Fatt: {fatt} | Dip: {dip}")
+                        st.text_area("Testo visto dal bot:", value=snippet, height=200)
+                        st.divider()
 
                 # Queste righe sono indentate come il "for", quindi partono quando il for ha finito
                 st.session_state.results = df_work
