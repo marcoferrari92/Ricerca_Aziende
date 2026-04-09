@@ -70,13 +70,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
 
 
-
-import re
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-import time
-
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
 def is_valid_piva(piva_raw):
     # Rimuove IT, spazi, punti, trattini e tiene SOLO i numeri
@@ -219,19 +212,36 @@ def scrape_sito_aziendale(url, ragione_sociale=""):
 
 
 # --- 4. RICERCA ONLINE (DuckDuckGo Lite) ---
+session = requests.Session()
+session.headers.update({'User-Agent': 'Mozilla/5.0'})
+
 def cerca_testo_online(ragione_sociale, max_retry=2):
+    """
+    Cerca testo azienda + fatturato/dipendenti su DuckDuckGo Lite
+    """
     query = ragione_sociale.replace(" ", "+") + "+fatturato+dipendenti"
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
+
     for _ in range(max_retry):
         try:
             res = session.get(url, timeout=10)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                # Estraiamo i testi dei risultati di ricerca
-                risultati = [t.get_text() for t in soup.find_all("td", class_="result-snippet")]
+                
+                # Trova tutti i link dei risultati e il loro testo
+                risultati = []
+                for a in soup.find_all("a"):
+                    text = a.get_text(strip=True)
+                    if len(text) > 20:  # ignoriamo testi troppo corti
+                        risultati.append(text)
+                
+                # Uniamo tutto in un unico testo
                 return " ".join(risultati)
+            
             time.sleep(1)
-        except: time.sleep(1)
+        except:
+            time.sleep(1)
+    
     return ""
 
 # --- 5. ESTRAZIONE AI ---
