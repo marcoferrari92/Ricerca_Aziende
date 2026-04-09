@@ -135,9 +135,8 @@ def chiedi_a_openai(nome_azienda, piva_crawler, sito, indirizzo, api_key_openai)
     Sito Web: {sito}
     P.IVA suggerita dal crawler: {piva_crawler}
 
-    Trova il fatturato più recente (2022-2024) e il numero di dipendenti.
-    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}. 
-    Se non sei sicuro al 100%, fai una stima basata sul settore e sulle dimensioni dell'azienda indicando la stima nella fonte."""
+    Trova il fatturato più recente, il numero di dipendenti e conferma se la p.iva è corretta.
+    Rispondi in JSON: {{"fatturato": "...", "dipendenti": "...", "piva": "...", "fonte": "..."}}."""
 
     try:
         response = client.chat.completions.create(
