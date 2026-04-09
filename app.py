@@ -7,7 +7,8 @@ import urllib3
 # Disabilita avvisi SSL per evitare log fastidiosi
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Import dei moduli locali (Assicurati che utils.py contenga fetch_data_google, scrape_sito_aziendale, chiedi_a_openai)
+# Import dei moduli locali
+# Assicurati che utils.py contenga fetch_data_google, scrape_sito_aziendale, chiedi_a_openai
 from mapping import ATECO_MAP 
 from utils import fetch_data_google, scrape_sito_aziendale, chiedi_a_openai
 
@@ -62,11 +63,14 @@ with col_ctrl:
     st.subheader("2. Comandi Ricerca")
     st.info(f"📍 Centro: {st.session_state.pos['lat']:.4f}, {st.session_state.pos['lon']:.4f}")
     if st.button("🚀 AVVIA RICERCA GOOGLE", use_container_width=True, type="primary"):
-        if not user_api_key: st.error("Inserisci la Google API Key")
-        elif not scelte: st.warning("Seleziona un settore")
+        if not user_api_key: 
+            st.error("Inserisci la Google API Key")
+        elif not scelte: 
+            st.warning("Seleziona un settore")
         else:
             keywords = []
-            for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
+            for s in scelte: 
+                keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
@@ -83,7 +87,6 @@ with col_ctrl:
 if not st.session_state.results.empty:
     st.divider()
     
-    # Placeholder per barra e log (sotto la tabella)
     st.subheader("3. Database Risultati")
     st.dataframe(st.session_state.results.drop(columns=['lat', 'lon', 'testo_raw'], errors='ignore'), use_container_width=True)
     
@@ -97,7 +100,6 @@ if not st.session_state.results.empty:
     with btn_col1:
         if st.button("🌐 1. AVVIA CRAWLER WEB", use_container_width=True):
             df_work = st.session_state.results.copy()
-            # Inizializziamo colonna per il testo se non esiste
             if 'testo_raw' not in df_work.columns:
                 df_work['testo_raw'] = ""
             
@@ -108,54 +110,51 @@ if not st.session_state.results.empty:
                 bar.progress((i + 1) / len(df_work), text=status_text)
                 
                 if row['Sito Web'] != 'N.D.':
-                    # NOTA: Assicurati che scrape_sito_aziendale restituisca 3 valori in utils.py
                     p_web, e_web, testo_web = scrape_sito_aziendale(row['Sito Web'])
                     df_work.at[idx, 'P.IVA (Crawler)'] = str(p_web)
                     df_work.at[idx, 'Email (Crawler)'] = str(e_web)
-                    df_work.at[idx, 'testo_raw'] = str(testo_web) # Salviamo per l'AI
+                    df_work.at[idx, 'testo_raw'] = str(testo_web)
             
             st.session_state.results = df_work
             st.rerun()
 
-   with btn_col2:
-    if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
-        if not openai_api_key:
-            st.error("Inserisci la OpenAI Key!")
-        elif st.session_state.results.empty:
-            st.warning("Esegui prima la ricerca su Google!")
-        else:
-            df_work = st.session_state.results.copy()
-            bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
+    with btn_col2:
+        if st.button("🤖 2. ANALISI INTELLIGENTE AI", use_container_width=True, type="primary"):
+            if not openai_api_key:
+                st.error("Inserisci la OpenAI Key!")
+            elif st.session_state.results.empty:
+                st.warning("Esegui prima la ricerca su Google!")
+            else:
+                df_work = st.session_state.results.copy()
+                bar = progress_placeholder.progress(0, text="Preparazione Analisi AI...")
             
-            # Expander per vedere cosa sta facendo l'AI in tempo reale
-            with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
-                log_container = st.empty()
-                history = []
+                # Expander per vedere cosa sta facendo l'AI in tempo reale
+                with log_placeholder.expander("🕵️ Dettagli Analisi AI (Real-time)", expanded=True):
+                    log_container = st.empty()
+                    history = []
 
-                for i, (idx, row) in enumerate(df_work.iterrows()):
-                    current_name = row['Ragione Sociale']
-                    bar.progress((i + 1) / len(df_work), text=f"🤖 AI analizza: {current_name}")
+                    for i, (idx, row) in enumerate(df_work.iterrows()):
+                        current_name = row['Ragione Sociale']
+                        bar.progress((i + 1) / len(df_work), text=f"🤖 AI analizza: {current_name}")
                     
-                    # Chiamata alla funzione aggiornata in utils.py
-                    # Passiamo il 'testo_raw' che il crawler ha salvato nel passo precedente
-                    fatt, dip, piva_ai, fonte = chiedi_a_openai(
-                        current_name, 
-                        row.get('P.IVA (Crawler)', 'Non trovata'), 
-                        row.get('Sito Web', 'N.D.'), 
-                        row.get('Indirizzo', 'N.D.'),
-                        row.get('testo_raw', ''), # Questo viene dal modulo crawler
-                        openai_api_key
-                    )
+                        fatt, dip, piva_ai, fonte = chiedi_a_openai(
+                            current_name, 
+                            row.get('P.IVA (Crawler)', 'Non trovata'), 
+                            row.get('Sito Web', 'N.D.'), 
+                            row.get('Indirizzo', 'N.D.'),
+                            row.get('testo_raw', ''),
+                            openai_api_key
+                        )
                     
-                    # Aggiornamento DataFrame
-                    df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
-                    df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
-                    df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
-                    df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
+                        # Aggiornamento DataFrame
+                        df_work.at[idx, 'Fatturato (AI)'] = str(fatt)
+                        df_work.at[idx, 'Dipendenti (AI)'] = str(dip)
+                        df_work.at[idx, 'P.IVA (AI)'] = str(piva_ai)
+                        df_work.at[idx, 'Nota/Fonte (AI)'] = str(fonte)
                     
-                    # Update Log visivo
-                    history.append(f"✅ **{current_name}** | P.IVA: {piva_ai} | Fatt: {fatt} | Fonte: {fonte}")
-                    log_container.markdown("\n\n".join(history[-5:])) # Mostra gli ultimi 5
+                        # Update Log visivo
+                        history.append(f"✅ **{current_name}** | P.IVA: {piva_ai} | Fatt: {fatt} | Fonte: {fonte}")
+                        log_container.markdown("\n\n".join(history[-5:]))
 
                 st.session_state.results = df_work
                 st.success("Analisi AI Completata!")
