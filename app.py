@@ -78,40 +78,48 @@ with col_ctrl:
             keywords = []
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
-                # 1. Recupero dati base da Google
+                # 1. Recupero dati base da Google (che ora include lo spacchettamento Regex)
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
-                # 2. CREAZIONE DELLE COLONNE VUOTE (Qui aggiungiamo quelle per lo stile)
-                # Definiamo tutte le colonne che vogliamo vedere nella tabella colorata
-                colonne_estetiche = [
-                    'Email (Crawler)', 'P.IVA (Crawler)',           # Gialle
-                    'P.IVA (AI)', 'Fatturato (AI)',                 # Blu
-                    'Dipendenti (AI)', 'ATECO (AI)', 
-                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 
-                    'Nota/Fonte (AI)', 'testo_raw'
+                # 2. DEFINIZIONE ORDINE E CREAZIONE COLONNE MANCANTI
+                colonne_totali = [
+                    'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+                    'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 'P.IVA (AI)', 
+                    'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
+                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
                 ]
                 
-                for col in colonne_estetiche:
+                for col in colonne_totali:
                     if col not in df.columns:
                         df[col] = "N.D."
                 
-                # 3. Salvataggio
+                # 3. Salvataggio e Ordinamento Colonne
                 st.session_state.results = df
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             
             st.rerun()
-
-
 
 # --- TABELLA E AZIONI ---
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
     
+    # 1. Assicuriamoci che l'ordine delle colonne sia quello richiesto prima di passarlo allo stile
+    ordine_visualizzazione = [
+        'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+        'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 'P.IVA (AI)', 
+        'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 'Ragione Sociale (AI)', 
+        'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
+    ]
+    
+    # Filtriamo il DF per mostrare solo le colonne desiderate nell'ordine corretto
+    df_display = st.session_state.results[ordine_visualizzazione]
+    
     # Chiamata alla funzione esterna di stile
-    tabella_stilizzata = applica_stile_tabella(st.session_state.results)
+    tabella_stilizzata = applica_stile_tabella(df_display)
     
     st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+    
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
@@ -149,11 +157,14 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
+                    # Usiamo la colonna 'Comune' appena estratta via Regex per la query AI
+                    comune_query = row['Comune'] if row['Comune'] != "N.D." else ""
+                    
                     bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
 
-                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+                    # Modifica qui: passiamo il comune alla funzione se l'hai aggiornata per riceverlo
+                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, comune_query, openai_api_key)
 
-                    # Salvataggio nelle colonne specifiche
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
                     df_work.at[idx, 'P.IVA (AI)'] = piva
@@ -163,16 +174,10 @@ if not st.session_state.results.empty:
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
-                    # 2. Aggiorniamo il riepilogo (Tab 1)
                     st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
                     sum_a.markdown(st.session_state.summary_log)
-                    
-                    # 3. Aggiorniamo il log integrale (Tab 2) - QUI VEDI TUTTO IL TESTO
                     st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
                     deb_a.markdown(st.session_state.debug_text_log)
-                    
-                    # Manteniamo la pausa per evitare il blocco 202
-                    # La pausa è già inclusa nella funzione cerca_testo_online in utils.py
                 
                 st.session_state.results = df_work
                 st.success("Analisi completata!")
