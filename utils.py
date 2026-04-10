@@ -13,7 +13,6 @@ from openai import OpenAI
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # GOOGLE 
-
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
@@ -25,11 +24,16 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     ris = []
     raggio_m = int(raggio_km * 1000)
     count = 0
+    
+    # Placeholder per i log in tempo reale nell'interfaccia
+    log_placeholder = st.empty()
 
     for kw in keywords_list:
         if count >= max_results:
             break
-
+        
+        log_placeholder.info(f"🔍 Ricerca parola chiave: **{kw}** (Trovati finora: {count})")
+        
         try:
             response = gmaps.places_nearby(
                 location=(lat, lon),
@@ -37,25 +41,25 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 keyword=kw
             )
 
-            if response.get("status") not in ["OK", "ZERO_RESULTS"]:
-                st.error(f"Google API error: {response}")
-                continue
-
             while True:
                 results = response.get('results', [])
+                num_nuovi = len(results)
+                st.toast(f"Trovate {num_nuovi} potenziali aziende per '{kw}'")
 
                 for place in results:
                     if count >= max_results:
                         break
 
-                    details = gmaps.place(
-                        place['place_id'],
-                        fields=[
-                            'name', 'formatted_address', 'website',
-                            'geometry', 'business_status', 'address_components'
-                        ],
-                        language='it'
-                    ).get('result', {})
+                    # Dettagli singoli
+                    try:
+                        details_res = gmaps.place(
+                            place['place_id'],
+                            fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
+                            language='it'
+                        )
+                        details = details_res.get('result', {})
+                    except Exception:
+                        continue
 
                     componenti = details.get('address_components', [])
                     comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
@@ -76,12 +80,8 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                             civico = c['long_name']
 
                     indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
-
                     s_raw = details.get('business_status', 'N.D.')
-                    s_ita = {
-                        'OPERATIONAL': 'Attiva',
-                        'CLOSED_TEMPORARILY': 'Chiusa Temp.'
-                    }.get(s_raw, 'N.D.')
+                    s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
 
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
@@ -96,24 +96,38 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
-
                     count += 1
 
+                # Gestione paginazione
                 token = response.get('next_page_token')
                 if not token or count >= max_results:
                     break
-
-                # FIX TOKEN
-                for _ in range(3):
-                    time.sleep(2)
+                
+                # Messaggio di attesa per il token (Google richiede tempo)
+                log_placeholder.warning(f"⏳ Caricamento pagina successiva per '{kw}'...")
+                
+                # Loop di attesa per validità token
+                max_retries = 5
+                success = False
+                for i in range(max_retries):
+                    time.sleep(2) # Pausa obbligatoria per Google
                     response = gmaps.places_nearby(page_token=token)
-                    if response.get('results'):
+                    if response.get('status') == 'OK':
+                        success = True
                         break
+                    elif response.get('status') == 'INVALID_REQUEST':
+                        continue # Il token non è ancora pronto
+                    else:
+                        break
+                
+                if not success:
+                    break
 
         except Exception as e:
-            st.error(f"Errore Google API: {e}")
+            st.error(f"Errore durante la scansione di '{kw}': {e}")
             continue
 
+    log_placeholder.success(f"✅ Ricerca completata! Totale aziende estratte: {count}")
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
