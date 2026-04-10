@@ -61,23 +61,24 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                         elif 'street_number' in types: 
                             civico = c['long_name']
 
+                    # Costruiamo l'indirizzo via + civico
                     indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
                     
-                    # Stato: indica se l'attività è Operativa o Chiusa
+                    # Stato (Operatività)
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
                     
-                    # Popoliamo il dizionario con TUTTE le colonne base richieste
+                    # Creazione dizionario con l'ordine richiesto per le prime colonne
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
-                        'Stato': s_ita,            # Operatività
-                        'Nazione': nazione,        # Paese (Italia, ecc)
+                        'Stato': s_ita,            # Attiva / Chiusa
+                        'Nazione': nazione,        # Italia, ecc.
                         'Provincia': provincia,
                         'Comune': comune,
                         'CAP': cap,
                         'Indirizzo': indirizzo_pulito,
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Email (Crawler)': 'N.D.', # Inizializzata per evitare KeyError
+                        'Email (Crawler)': 'N.D.', # Predisposizione colonna
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
