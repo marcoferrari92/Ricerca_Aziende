@@ -105,12 +105,13 @@ with col_ctrl:
             
             st.rerun()
 
-# --- TABELLA E AZIONI ---
+# --- TABELLA E AZIONI --- (SOSTITUISCI DA QUI FINO ALLA FINE DEL FILE)
+
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader("3. Database Risultati")
+    st.subheader(f"3. Database Risultati ({len(st.session_state.results)} aziende)")
 
-    # 1. DEFINIAMO L'ORDINE RICHIESTO (Lo facciamo qui per sicurezza assoluta)
+    # 1. Definizione ordine colonne
     ordine_richiesto = [
         'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
         'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
@@ -118,17 +119,19 @@ if not st.session_state.results.empty:
         'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
     ]
 
-    # 2. ASSICURIAMOCI CHE TUTTE LE COLONNE ESISTANO (evita errori se Google non trova dati)
+    # 2. Sicurezza: creiamo le colonne mancanti se necessario
     for col in ordine_richiesto:
         if col not in st.session_state.results.columns:
             st.session_state.results[col] = "N.D."
 
-    # 3. FILTRIAMO IL DATAFRAME NELL'ORDINE CORRETTO
+    # 3. Visualizzazione TABELLA (USIAMO ST.DATAFRAME DIRETTO PER TEST)
     df_da_mostrare = st.session_state.results[ordine_richiesto]
     
-    # 4. APPLICHIAMO LO STILE E MOSTRIAMO
-    tabella_stilizzata = applica_stile_tabella(df_da_mostrare)
-    st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+    # Se vuoi rimettere lo stile dopo che vedi che funziona, usa le due righe commentate sotto
+    # tabella_stilizzata = applica_stile_tabella(df_da_mostrare)
+    # st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+    
+    st.dataframe(df_da_mostrare, use_container_width=True, height=600)
 
     # --- BOTTONI AZIONE ---
     btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -168,10 +171,9 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
-                    comune = row['Comune']
+                    comune = row.get('Comune', 'N.D.')
                     
                     bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome} ({comune})")
-
                     f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, comune, openai_api_key)
 
                     df_work.at[idx, 'Fatturato (AI)'] = f
@@ -185,10 +187,13 @@ if not st.session_state.results.empty:
                     
                     st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
                     sum_a.markdown(st.session_state.summary_log)
-                    
                     st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
                     deb_a.markdown(st.session_state.debug_text_log)
                 
                 st.session_state.results = df_work
                 st.success("Analisi completata!")
                 st.rerun()
+else:
+    # Messaggio se il DB è vuoto
+    st.info("Nessun dato presente. Avvia la ricerca da Google Maps sopra.")
+
