@@ -77,61 +77,41 @@ with col_ctrl:
         else:
             keywords = []
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
-            
-            # 1. Esecuzione ricerca
-            df_risultato = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
-            
-            if not df_risultato.empty:
-                # 2. Prepariamo le colonne nell'ordine esatto richiesto
-                ordine_colonne = [
-                    'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
-                    'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
-                    'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
-                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
+            with st.status("Ricerca su Google Maps...") as status:
+                # 1. Recupero dati base da Google
+                df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
+                
+                # 2. CREAZIONE DELLE COLONNE VUOTE (Qui aggiungiamo quelle per lo stile)
+                # Definiamo tutte le colonne che vogliamo vedere nella tabella colorata
+                colonne_estetiche = [
+                    'Email (Crawler)', 'P.IVA (Crawler)',           # Gialle
+                    'P.IVA (AI)', 'Fatturato (AI)',                 # Blu
+                    'Dipendenti (AI)', 'ATECO (AI)', 
+                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 
+                    'Nota/Fonte (AI)', 'testo_raw'
                 ]
                 
-                # Aggiungiamo forzatamente le colonne mancanti
-                for col in ordine_colonne + ['lat', 'lon']:
-                    if col not in df_risultato.columns:
-                        df_risultato[col] = "N.D."
+                for col in colonne_estetiche:
+                    if col not in df.columns:
+                        df[col] = "N.D."
                 
-                # 3. SALVATAGGIO REALE E FORZATO
-                st.session_state.results = df_risultato[ordine_colonne + ['lat', 'lon']]
-                st.success(f"Trovate {len(df_risultato)} aziende!")
-                time.sleep(1) # Diamo tempo all'utente di vedere il messaggio
-                st.rerun()
-            else:
-                st.error("Nessun dato restituito da Google. Verifica raggio o API Key.")
+                # 3. Salvataggio
+                st.session_state.results = df
+                status.update(label=f"Trovate {len(df)} aziende!", state="complete")
+            
+            st.rerun()
 
-# --- TABELLA E AZIONI --- (SOSTITUISCI DA QUI FINO ALLA FINE DEL FILE)
 
+
+# --- TABELLA E AZIONI ---
 if not st.session_state.results.empty:
     st.divider()
-    st.subheader(f"3. Database Risultati ({len(st.session_state.results)} aziende)")
-
-    # 1. Definizione ordine colonne
-    ordine_richiesto = [
-        'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
-        'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
-        'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
-        'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
-    ]
-
-    # 2. Sicurezza: creiamo le colonne mancanti se necessario
-    for col in ordine_richiesto:
-        if col not in st.session_state.results.columns:
-            st.session_state.results[col] = "N.D."
-
-    # 3. Visualizzazione TABELLA (USIAMO ST.DATAFRAME DIRETTO PER TEST)
-    df_da_mostrare = st.session_state.results[ordine_richiesto]
+    st.subheader("3. Database Risultati")
     
-    # Se vuoi rimettere lo stile dopo che vedi che funziona, usa le due righe commentate sotto
-    # tabella_stilizzata = applica_stile_tabella(df_da_mostrare)
-    # st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+    # Chiamata alla funzione esterna di stile
+    tabella_stilizzata = applica_stile_tabella(st.session_state.results)
     
-    st.dataframe(df_da_mostrare, use_container_width=True, height=600)
-
-    # --- BOTTONI AZIONE ---
+    st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
@@ -169,11 +149,11 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
-                    comune = row.get('Comune', 'N.D.')
-                    
-                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome} ({comune})")
-                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, comune, openai_api_key)
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
 
+                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+
+                    # Salvataggio nelle colonne specifiche
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
                     df_work.at[idx, 'P.IVA (AI)'] = piva
@@ -183,15 +163,17 @@ if not st.session_state.results.empty:
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
+                    # 2. Aggiorniamo il riepilogo (Tab 1)
                     st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
                     sum_a.markdown(st.session_state.summary_log)
+                    
+                    # 3. Aggiorniamo il log integrale (Tab 2) - QUI VEDI TUTTO IL TESTO
                     st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
                     deb_a.markdown(st.session_state.debug_text_log)
+                    
+                    # Manteniamo la pausa per evitare il blocco 202
+                    # La pausa è già inclusa nella funzione cerca_testo_online in utils.py
                 
                 st.session_state.results = df_work
                 st.success("Analisi completata!")
                 st.rerun()
-else:
-    # Messaggio se il DB è vuoto
-    st.info("Nessun dato presente. Avvia la ricerca da Google Maps sopra.")
-
