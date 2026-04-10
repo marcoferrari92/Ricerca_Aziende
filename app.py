@@ -78,24 +78,30 @@ with col_ctrl:
             keywords = []
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
+                # 1. Chiamata alla funzione (assicurati che utils.py sia salvato!)
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
-                # --- DEFINIZIONE ORDINE COLONNE RICHIESTO ---
-                ordine_colonne = [
-                    'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
-                    'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
-                    'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
-                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
-                ]
-                
-                # Inizializza colonne mancanti e riordina
-                for col in ordine_colonne:
-                    if col not in df.columns:
-                        df[col] = "N.D."
-                
-                # Forziamo l'ordine e includiamo le coordinate lat/lon (nascoste ma utili al sistema)
-                st.session_state.results = df[ordine_colonne + ['lat', 'lon']]
-                status.update(label=f"Trovate {len(df)} aziende!", state="complete")
+                if df.empty:
+                    status.update(label="Nessun risultato trovato.", state="error")
+                else:
+                    # 2. DEFINIZIONE ORDINE COLONNE (L'elenco esatto che vuoi tu)
+                    ordine_colonne = [
+                        'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+                        'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
+                        'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
+                        'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
+                    ]
+                    
+                    # 3. BLOCCO DI SICUREZZA ANTI-CRASH
+                    # Creiamo tutte le colonne mancanti (incluse lat e lon per la mappa)
+                    for col in ordine_colonne + ['lat', 'lon']:
+                        if col not in df.columns:
+                            df[col] = "N.D."
+                    
+                    # 4. ORDINAMENTO FORZATO
+                    # Ora siamo sicuri che le colonne esistano tutte
+                    st.session_state.results = df[ordine_colonne + ['lat', 'lon']]
+                    status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             
             st.rerun()
 
