@@ -104,7 +104,7 @@ if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
     
-    # 1. Assicuriamoci che l'ordine delle colonne sia quello richiesto prima di passarlo allo stile
+    # 1. TABELLA
     ordine_visualizzazione = [
         'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
         'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 'P.IVA (AI)', 
@@ -119,6 +119,17 @@ if not st.session_state.results.empty:
     tabella_stilizzata = applica_stile_tabella(df_display)
     
     st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+
+    # 2. TASTO DOWNLOAD
+    csv_data = df_display.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 SCARICA DATABASE COMPLETO (CSV)",
+        data=csv_data,
+        file_name="estrazione_aziende.csv",
+        mime='text/csv',
+        use_container_width=True
+    )
+    st.write("") # Spazio estetico
     
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
