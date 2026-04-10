@@ -80,21 +80,21 @@ with col_ctrl:
             with st.status("Ricerca su Google Maps...") as status:
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
-                # Definizione ordine colonne richiesto
+                # --- DEFINIZIONE ORDINE COLONNE RICHIESTO ---
                 ordine_colonne = [
-                    'Ragione Sociale', 'Stato', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 'Sito Web',
-                    'Email (Crawler)', 'P.IVA (Crawler)', 
+                    'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+                    'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
                     'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
                     'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
                 ]
                 
-                # Inizializza colonne mancanti
+                # Inizializza colonne mancanti e riordina
                 for col in ordine_colonne:
                     if col not in df.columns:
                         df[col] = "N.D."
                 
-                # Applica l'ordinamento
-                st.session_state.results = df[ordine_colonne]
+                # Forziamo l'ordine e includiamo le coordinate lat/lon (nascoste ma utili al sistema)
+                st.session_state.results = df[ordine_colonne + ['lat', 'lon']]
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             
             st.rerun()
@@ -104,8 +104,9 @@ if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
     
-    # Chiamata alla funzione esterna di stile
-    tabella_stilizzata = applica_stile_tabella(st.session_state.results)
+    # Mostriamo solo le colonne richieste nel DataFrame visualizzato
+    colonne_visibili = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
+    tabella_stilizzata = applica_stile_tabella(st.session_state.results[colonne_visibili])
     
     st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
     btn_col1, btn_col2, btn_col3 = st.columns(3)
