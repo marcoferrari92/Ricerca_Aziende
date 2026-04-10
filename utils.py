@@ -88,7 +88,8 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 if not token or count >= max_results: break
                 time.sleep(2) 
                 response = gmaps.places_nearby(page_token=token)
-        except Exception:
+        except Exception as e:
+            st.error(f"Errore Google API: {e}")
             continue
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
