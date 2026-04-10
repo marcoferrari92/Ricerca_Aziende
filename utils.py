@@ -231,9 +231,9 @@ from urllib.parse import urlparse
 
 from urllib.parse import urlparse, parse_qs
 
-def cerca_testo_online(ragione_sociale):
+def cerca_testo_online(ragione_sociale, comune):
     nome_pulito = " ".join(ragione_sociale.split()[:4])
-    query = f"{nome_pulito} fatturato numero dipendenti".replace(" ", "+")
+    query = f"{nome_pulito} {comune} fatturato numero dipendenti".replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'}
@@ -290,6 +290,7 @@ def estrai_con_ai(testo, api_key):
        Se presente, indica l'anno a cui fa riferimento il fatturato tra parentesi (es. "1.300.000 € (2023)").
     3. DIPENDENTI: Solo numeri o range (es. "5" o "2-5").
     4. FONTI: Identifica il dominio dal tag [DOMINIO.IT].
+    5. ATECO: Scrivi solo il numero nel formato XX.XX.XX (es. 25.99.99). Se non hai tutte le cifre indica solo quelle trovate ma mantieni la formattazione.
 
     TESTO: \"\"\"{testo}\"\"\"
     
