@@ -120,16 +120,33 @@ if not st.session_state.results.empty:
     
     st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
 
-    # 2. TASTO DOWNLOAD
-    csv_data = df_display.to_csv(index=False).encode('utf-8-sig')
+    # --- 2. TASTO DOWNLOAD OTTIMIZZATO ---
+    # Definiamo l'ordine esatto delle colonne per il CSV finale
+    colonne_csv = [
+        'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+        'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 'P.IVA (AI)', 
+        'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 'Ragione Sociale (AI)', 
+        'Indirizzo (AI)', 'Nota/Fonte (AI)'
+    ]
+    
+    # Creiamo una copia pulita per l'esportazione (senza colonne tecniche come lat/lon o testo_raw se non le vuoi)
+    # Verifichiamo quali di queste colonne esistono nel DF per evitare errori
+    df_export = st.session_state.results[[c for c in colonne_csv if c in st.session_state.results.columns]]
+
+    # Conversione in CSV:
+    # index=False: non esporta i numeri di riga di pandas
+    # sep=';': garantisce che Excel apra il file in colonne separate automaticamente in Europa
+    # encoding='utf-8-sig': fondamentale per accenti e simboli come il €
+    csv_buffer = df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
+
     st.download_button(
-        label="📥 SCARICA DATABASE COMPLETO (CSV)",
-        data=csv_data,
-        file_name="estrazione_aziende.csv",
+        label="📥 SCARICA DATABASE ORDINATO (CSV)",
+        data=csv_buffer,
+        file_name=f"estrazione_aziende_{time.strftime('%d%m%Y_%H%M')}.csv",
         mime='text/csv',
-        use_container_width=True
+        use_container_width=True,
+        help="Scarica il file compatibile con Excel (separatore punto e virgola)"
     )
-    st.write("") # Spazio estetico
     
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
