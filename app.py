@@ -157,14 +157,20 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
-                    # Usiamo la colonna 'Comune' appena estratta via Regex per la query AI
-                    comune_query = row['Comune'] if row['Comune'] != "N.D." else ""
+                    # --- RECUPERO IL COMUNE DALLA RIGA ---
+                    comune_per_query = row.get('Comune', '') 
                     
-                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome} ({comune_per_query})")
 
-                    # Modifica qui: passiamo il comune alla funzione se l'hai aggiornata per riceverlo
-                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, comune_query, openai_api_key)
+                    # Chiamata alla funzione aggiornata (assicurati che in utils.py 
+                    # cerca_info_finanziarie_per_nome accetti ora il comune come secondo parametro)
+                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(
+                        nome, 
+                        comune_per_query, 
+                        openai_api_key
+                    )
 
+                    # Salvataggio nelle colonne specifiche
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
                     df_work.at[idx, 'P.IVA (AI)'] = piva
@@ -174,8 +180,10 @@ if not st.session_state.results.empty:
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
+                    # Aggiornamento log visuali
                     st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
                     sum_a.markdown(st.session_state.summary_log)
+                    
                     st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
                     deb_a.markdown(st.session_state.debug_text_log)
                 
