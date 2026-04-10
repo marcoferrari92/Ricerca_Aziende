@@ -12,8 +12,7 @@ from openai import OpenAI
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-# --- GOOGLE DATA FETCHING ---
+# GOOGLE 
 
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
@@ -45,30 +44,40 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                     
                     # --- ESTRAZIONE COMPONENTI INDIRIZZO ---
                     componenti = details.get('address_components', [])
-                    comune, cap, provincia, via, civico = "N.D.", "N.D.", "N.D.", "", ""
+                    comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
                     
                     for c in componenti:
                         types = c.get('types', [])
-                        if 'locality' in types: comune = c['long_name']
-                        elif 'postal_code' in types: cap = c['long_name']
-                        elif 'administrative_area_level_2' in types: provincia = c['short_name']
-                        elif 'route' in types: via = c['long_name']
-                        elif 'street_number' in types: civico = c['long_name']
+                        if 'locality' in types: 
+                            comune = c['long_name']
+                        elif 'postal_code' in types: 
+                            cap = c['long_name']
+                        elif 'administrative_area_level_2' in types: 
+                            provincia = c['short_name']
+                        elif 'country' in types: 
+                            nazione = c['long_name']  # Es: Italia
+                        elif 'route' in types: 
+                            via = c['long_name']
+                        elif 'street_number' in types: 
+                            civico = c['long_name']
 
                     indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
                     
+                    # Stato: indica se l'attività è Operativa o Chiusa
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
                     
+                    # Popoliamo il dizionario con TUTTE le colonne base richieste
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
-                        'Stato': s_ita,
+                        'Stato': s_ita,            # Operatività
+                        'Nazione': nazione,        # Paese (Italia, ecc)
+                        'Provincia': provincia,
                         'Comune': comune,
                         'CAP': cap,
-                        'Provincia': provincia,
                         'Indirizzo': indirizzo_pulito,
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Indirizzo Completo': details.get('formatted_address', 'N.D.'),
+                        'Email (Crawler)': 'N.D.', # Inizializzata per evitare KeyError
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
@@ -82,7 +91,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
             continue
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
-
 
 
 # --- VALIDAZIONE P.IVA (Algoritmo di Luhn) ---
