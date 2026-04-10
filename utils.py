@@ -27,71 +27,93 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     count = 0
 
     for kw in keywords_list:
-        if count >= max_results: break
+        if count >= max_results:
+            break
+
         try:
-            response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
-            
+            response = gmaps.places_nearby(
+                location=(lat, lon),
+                radius=raggio_m,
+                keyword=kw
+            )
+
+            if response.get("status") not in ["OK", "ZERO_RESULTS"]:
+                st.error(f"Google API error: {response}")
+                continue
+
             while True:
                 results = response.get('results', [])
+
                 for place in results:
-                    if count >= max_results: break
-                    
+                    if count >= max_results:
+                        break
+
                     details = gmaps.place(
-                        place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
+                        place['place_id'],
+                        fields=[
+                            'name', 'formatted_address', 'website',
+                            'geometry', 'business_status', 'address_components'
+                        ],
                         language='it'
                     ).get('result', {})
-                    
-                    # --- ESTRAZIONE COMPONENTI INDIRIZZO ---
+
                     componenti = details.get('address_components', [])
                     comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
-                    
+
                     for c in componenti:
                         types = c.get('types', [])
-                        if 'locality' in types: 
+                        if 'locality' in types:
                             comune = c['long_name']
-                        elif 'postal_code' in types: 
+                        elif 'postal_code' in types:
                             cap = c['long_name']
-                        elif 'administrative_area_level_2' in types: 
+                        elif 'administrative_area_level_2' in types:
                             provincia = c['short_name']
-                        elif 'country' in types: 
-                            nazione = c['long_name']  # Es: Italia
-                        elif 'route' in types: 
+                        elif 'country' in types:
+                            nazione = c['long_name']
+                        elif 'route' in types:
                             via = c['long_name']
-                        elif 'street_number' in types: 
+                        elif 'street_number' in types:
                             civico = c['long_name']
 
-                    # Costruiamo l'indirizzo via + civico
                     indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
-                    
-                    # Stato (Operatività)
+
                     s_raw = details.get('business_status', 'N.D.')
-                    s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
-                    
-                    # Creazione dizionario con l'ordine richiesto per le prime colonne
+                    s_ita = {
+                        'OPERATIONAL': 'Attiva',
+                        'CLOSED_TEMPORARILY': 'Chiusa Temp.'
+                    }.get(s_raw, 'N.D.')
+
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
-                        'Stato': s_ita,            # Attiva / Chiusa
-                        'Nazione': nazione,        # Italia, ecc.
+                        'Stato': s_ita,
+                        'Nazione': nazione,
                         'Provincia': provincia,
                         'Comune': comune,
                         'CAP': cap,
                         'Indirizzo': indirizzo_pulito,
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Email (Crawler)': 'N.D.', # Predisposizione colonna
+                        'Email (Crawler)': 'N.D.',
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
+
                     count += 1
-                
+
                 token = response.get('next_page_token')
-                if not token or count >= max_results: break
-                time.sleep(2) 
-                response = gmaps.places_nearby(page_token=token)
+                if not token or count >= max_results:
+                    break
+
+                # FIX TOKEN
+                for _ in range(3):
+                    time.sleep(2)
+                    response = gmaps.places_nearby(page_token=token)
+                    if response.get('results'):
+                        break
+
         except Exception as e:
             st.error(f"Errore Google API: {e}")
             continue
-            
+
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
