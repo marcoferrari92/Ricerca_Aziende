@@ -13,7 +13,11 @@ from openai import OpenAI
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # GOOGLE 
-@st.cache_data(show_spinner=True) # Lasciamo solo lo spinner standard di Streamlit
+# In utils.py
+import googlemaps
+import pandas as pd
+import time
+
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
         gmaps = googlemaps.Client(key=api_key)
@@ -27,21 +31,23 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     for kw in keywords_list:
         if count >= max_results: break
         try:
+            # Ricerca iniziale
             response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
+            
             while True:
                 results = response.get('results', [])
                 for place in results:
                     if count >= max_results: break
                     
-                    # Chiamata ai dettagli
+                    # Dettagli singoli
                     details = gmaps.place(place['place_id'], 
                         fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
                         language='it').get('result', {})
 
-                    # Estrazione componenti (Comune, Provincia, Nazione, etc.)
-                    componenti = details.get('address_components', [])
+                    # Estrazione componenti indirizzo
+                    comp = details.get('address_components', [])
                     comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
-                    for c in componenti:
+                    for c in comp:
                         t = c.get('types', [])
                         if 'locality' in t: comune = c['long_name']
                         elif 'postal_code' in t: cap = c['long_name']
@@ -59,7 +65,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                         'CAP': cap,
                         'Indirizzo': f"{via} {civico}".strip() if via else "N.D.",
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Email (Crawler)': 'N.D.',
+                        'Email (Crawler)': 'N.D.', # Importante per la tabella
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
@@ -67,10 +73,11 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
                 token = response.get('next_page_token')
                 if not token or count >= max_results: break
-                time.sleep(2) # Pausa tecnica necessaria
+                time.sleep(2) 
                 response = gmaps.places_nearby(page_token=token)
         except Exception:
             continue
+            
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
