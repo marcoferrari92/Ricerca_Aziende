@@ -37,7 +37,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     for kw in keywords_list:
         if count >= max_results: break
         try:
-            # Ricerca iniziale
             response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
             
             while True:
@@ -45,25 +44,37 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 for place in results:
                     if count >= max_results: break
                     
-                    # Dettagli singoli
+                    # Dettagli singoli - CHIEDIAMO ANCHE address_components per il Comune
                     details = gmaps.place(
                         place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
                         language='it'
                     ).get('result', {})
+                    
+                    # ESTRAZIONE MINIMA PER IL COMUNE (Serve per la tua ricerca AI)
+                    componenti = details.get('address_components', [])
+                    comune, nazione, prov, cap = "N.D.", "N.D.", "N.D.", "N.D."
+                    for c in componenti:
+                        t = c.get('types', [])
+                        if 'locality' in t: comune = c['long_name']
+                        elif 'country' in t: nazione = c['long_name']
+                        elif 'administrative_area_level_2' in t: prov = c['short_name']
+                        elif 'postal_code' in t: cap = c['long_name']
                     
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
                     
+                    # CREIAMO IL DIZIONARIO CON TUTTE LE COLONNE CHE L'APP SI ASPETTA
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
                         'Stato': s_ita,
+                        'Nazione': nazione,
+                        'Provincia': prov,
+                        'Comune': comune,
+                        'CAP': cap,
+                        'Indirizzo': details.get('formatted_address', 'N.D.'), # INDIRIZZO COMPLETO
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Indirizzo': details.get('formatted_address', 'N.D.'),
-                        'Partita IVA': 'N.D.',
-                        'Email': 'N.D.',
-                        'Fatturato': 'N.D.',
-                        'Dipendenti': 'N.D.',
+                        'Email (Crawler)': 'N.D.',
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
