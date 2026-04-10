@@ -13,6 +13,8 @@ from openai import OpenAI
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+# --- GOOGLE DATA FETCHING ---
+
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
@@ -28,7 +30,6 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     for kw in keywords_list:
         if count >= max_results: break
         try:
-            # Ricerca iniziale
             response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
             
             while True:
@@ -36,12 +37,25 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 for place in results:
                     if count >= max_results: break
                     
-                    # Dettagli singoli
                     details = gmaps.place(
                         place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
                         language='it'
                     ).get('result', {})
+                    
+                    # --- ESTRAZIONE COMPONENTI INDIRIZZO ---
+                    componenti = details.get('address_components', [])
+                    comune, cap, provincia, via, civico = "N.D.", "N.D.", "N.D.", "", ""
+                    
+                    for c in componenti:
+                        types = c.get('types', [])
+                        if 'locality' in types: comune = c['long_name']
+                        elif 'postal_code' in types: cap = c['long_name']
+                        elif 'administrative_area_level_2' in types: provincia = c['short_name']
+                        elif 'route' in types: via = c['long_name']
+                        elif 'street_number' in types: civico = c['long_name']
+
+                    indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
                     
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
@@ -49,12 +63,12 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
                         'Stato': s_ita,
+                        'Comune': comune,
+                        'CAP': cap,
+                        'Provincia': provincia,
+                        'Indirizzo': indirizzo_pulito,
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Indirizzo': details.get('formatted_address', 'N.D.'),
-                        'Partita IVA': 'N.D.',
-                        'Email': 'N.D.',
-                        'Fatturato': 'N.D.',
-                        'Dipendenti': 'N.D.',
+                        'Indirizzo Completo': details.get('formatted_address', 'N.D.'),
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
@@ -64,7 +78,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 if not token or count >= max_results: break
                 time.sleep(2) 
                 response = gmaps.places_nearby(page_token=token)
-        except Exception as e:
+        except Exception:
             continue
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
@@ -220,16 +234,12 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 session = requests.Session()
 session.headers.update({
     'User-Agent': 'Mozilla/5.0'
 })
-
-from urllib.parse import urlparse
-
-from urllib.parse import urlparse, parse_qs
 
 def cerca_testo_online(ragione_sociale, comune):
     #nome_pulito = " ".join(ragione_sociale.split()[:4])
