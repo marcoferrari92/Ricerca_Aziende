@@ -78,30 +78,26 @@ with col_ctrl:
             keywords = []
             for s in scelte: keywords.extend(ATECO_MAP.get(s, [s]))
             with st.status("Ricerca su Google Maps...") as status:
-                # 1. Recupero dati base da Google
                 df = fetch_data_google(st.session_state.pos['lat'], st.session_state.pos['lon'], raggio, keywords, user_api_key, max_results=max_test)
                 
-                # 2. CREAZIONE DELLE COLONNE VUOTE (Qui aggiungiamo quelle per lo stile)
-                # Definiamo tutte le colonne che vogliamo vedere nella tabella colorata
-                colonne_estetiche = [
-                    'Email (Crawler)', 'P.IVA (Crawler)',           # Gialle
-                    'P.IVA (AI)', 'Fatturato (AI)',                 # Blu
-                    'Dipendenti (AI)', 'ATECO (AI)', 
-                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 
-                    'Nota/Fonte (AI)', 'testo_raw'
+                # Definizione ordine colonne richiesto
+                ordine_colonne = [
+                    'Ragione Sociale', 'Stato', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 'Sito Web',
+                    'Email (Crawler)', 'P.IVA (Crawler)', 
+                    'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
+                    'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
                 ]
                 
-                for col in colonne_estetiche:
+                # Inizializza colonne mancanti
+                for col in ordine_colonne:
                     if col not in df.columns:
                         df[col] = "N.D."
                 
-                # 3. Salvataggio
-                st.session_state.results = df
+                # Applica l'ordinamento
+                st.session_state.results = df[ordine_colonne]
                 status.update(label=f"Trovate {len(df)} aziende!", state="complete")
             
             st.rerun()
-
-
 
 # --- TABELLA E AZIONI ---
 if not st.session_state.results.empty:
@@ -149,11 +145,12 @@ if not st.session_state.results.empty:
 
                 for i, (idx, row) in enumerate(df_work.iterrows()):
                     nome = row['Ragione Sociale']
-                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome}")
+                    comune = row['Comune']
+                    
+                    bar.progress((i + 1) / len(df_work), text=f"Analisi in corso: {nome} ({comune})")
 
-                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, openai_api_key)
+                    f, d, piva, ind_ai, ateco_ai, rag_ai, extra, testo_pieno = cerca_info_finanziarie_per_nome(nome, comune, openai_api_key)
 
-                    # Salvataggio nelle colonne specifiche
                     df_work.at[idx, 'Fatturato (AI)'] = f
                     df_work.at[idx, 'Dipendenti (AI)'] = d
                     df_work.at[idx, 'P.IVA (AI)'] = piva
@@ -163,18 +160,12 @@ if not st.session_state.results.empty:
                     df_work.at[idx, 'Nota/Fonte (AI)'] = extra
                     df_work.at[idx, 'testo_raw'] = testo_pieno
                     
-                    # 2. Aggiorniamo il riepilogo (Tab 1)
                     st.session_state.summary_log += f"✅ **{nome}** -> Fatt: {f} | Dip: {d}\n\n"
                     sum_a.markdown(st.session_state.summary_log)
                     
-                    # 3. Aggiorniamo il log integrale (Tab 2) - QUI VEDI TUTTO IL TESTO
                     st.session_state.debug_text_log += f"### {nome}\n**INFO ESTRATTE:** {extra}\n**TESTO INTEGRALE LETTO:**\n{testo_pieno}\n\n---\n"
                     deb_a.markdown(st.session_state.debug_text_log)
-                    
-                    # Manteniamo la pausa per evitare il blocco 202
-                    # La pausa è già inclusa nella funzione cerca_testo_online in utils.py
                 
                 st.session_state.results = df_work
                 st.success("Analisi completata!")
                 st.rerun()
-
