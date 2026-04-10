@@ -18,6 +18,10 @@ import googlemaps
 import pandas as pd
 import time
 
+import googlemaps
+import pandas as pd
+import time
+
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
         gmaps = googlemaps.Client(key=api_key)
@@ -31,7 +35,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
     for kw in keywords_list:
         if count >= max_results: break
         try:
-            # Ricerca iniziale
+            # Ricerca di prossimità
             response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
             
             while True:
@@ -39,33 +43,31 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 for place in results:
                     if count >= max_results: break
                     
-                    # Dettagli singoli
+                    # Dettagli completi del luogo
                     details = gmaps.place(place['place_id'], 
                         fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
                         language='it').get('result', {})
 
-                    # Estrazione componenti indirizzo
+                    # Estraiamo solo Comune e Nazione per la ricerca AI, il resto lo teniamo accorpato
                     comp = details.get('address_components', [])
-                    comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
+                    comune, nazione, prov, cap = "N.D.", "N.D.", "N.D.", "N.D."
                     for c in comp:
                         t = c.get('types', [])
                         if 'locality' in t: comune = c['long_name']
-                        elif 'postal_code' in t: cap = c['long_name']
-                        elif 'administrative_area_level_2' in t: provincia = c['short_name']
                         elif 'country' in t: nazione = c['long_name']
-                        elif 'route' in t: via = c['long_name']
-                        elif 'street_number' in t: civico = c['long_name']
+                        elif 'administrative_area_level_2' in t: prov = c['short_name']
+                        elif 'postal_code' in t: cap = c['long_name']
 
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
                         'Stato': {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(details.get('business_status'), 'N.D.'),
                         'Nazione': nazione,
-                        'Provincia': provincia,
+                        'Provincia': prov,
                         'Comune': comune,
                         'CAP': cap,
-                        'Indirizzo': f"{via} {civico}".strip() if via else "N.D.",
+                        'Indirizzo': details.get('formatted_address', 'N.D.'), # INDIRIZZO ACCORPATO (Originale Google)
                         'Sito Web': details.get('website', 'N.D.'),
-                        'Email (Crawler)': 'N.D.', # Importante per la tabella
+                        'Email (Crawler)': 'N.D.',
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
                         'lon': details.get('geometry', {}).get('location', {}).get('lng')
                     })
@@ -73,7 +75,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
 
                 token = response.get('next_page_token')
                 if not token or count >= max_results: break
-                time.sleep(2) 
+                time.sleep(2) # Pausa obbligatoria per attivazione token
                 response = gmaps.places_nearby(page_token=token)
         except Exception:
             continue
