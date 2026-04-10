@@ -232,8 +232,8 @@ from urllib.parse import urlparse
 from urllib.parse import urlparse, parse_qs
 
 def cerca_testo_online(ragione_sociale, comune):
-    nome_pulito = " ".join(ragione_sociale.split()[:4])
-    query = f"{nome_pulito} {comune} fatturato numero dipendenti".replace(" ", "+")
+    #nome_pulito = " ".join(ragione_sociale.split()[:4])
+    query = f"{ragione_sociale} {comune} fatturato numero dipendenti".replace(" ", "+")
     url = f"https://lite.duckduckgo.com/lite/?q={query}"
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36'}
