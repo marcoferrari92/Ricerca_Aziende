@@ -22,6 +22,8 @@ import googlemaps
 import pandas as pd
 import time
 
+import re
+
 @st.cache_data(show_spinner=False)
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
@@ -44,27 +46,46 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 for place in results:
                     if count >= max_results: break
                     
-                    # Dettagli singoli - CHIEDIAMO ANCHE address_components per il Comune
                     details = gmaps.place(
                         place['place_id'], 
-                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status'],
                         language='it'
                     ).get('result', {})
                     
-                    # ESTRAZIONE MINIMA PER IL COMUNE (Serve per la tua ricerca AI)
-                    componenti = details.get('address_components', [])
-                    comune, nazione, prov, cap = "N.D.", "N.D.", "N.D.", "N.D."
-                    for c in componenti:
-                        t = c.get('types', [])
-                        if 'locality' in t: comune = c['long_name']
-                        elif 'country' in t: nazione = c['long_name']
-                        elif 'administrative_area_level_2' in t: prov = c['short_name']
-                        elif 'postal_code' in t: cap = c['long_name']
+                    indirizzo_full = details.get('formatted_address', 'N.D.')
                     
+                    # --- LOGICA DI SPACCHETTAMENTO MANUALE ---
+                    # Esempio: "Via A. Volta, 56, 36057 Arcugnano VI, Italia"
+                    comune, nazione, prov, cap, via_civico = "N.D.", "N.D.", "N.D.", "N.D.", indirizzo_full
+                    
+                    if indirizzo_full != 'N.D.':
+                        try:
+                            # 1. Separiamo i blocchi principali per virgola
+                            parti = [p.strip() for p in indirizzo_full.split(',')]
+                            
+                            # 2. La Nazione è solitamente l'ultima parte
+                            nazione = parti[-1]
+                            
+                            # 3. Cerchiamo il blocco con il CAP (5 cifre)
+                            # Usiamo regex per trovare "36057 Arcugnano VI"
+                            for p in parti:
+                                match = re.search(r'(\d{5})\s+(.+)\s+([A-Z]{2})', p)
+                                if match:
+                                    cap = match.group(1)
+                                    comune = match.group(2)
+                                    prov = match.group(3)
+                                    break
+                            
+                            # 4. La via e il civico sono solitamente le prime parti (prima del blocco CAP)
+                            # Uniamo tutto ciò che viene prima del blocco CAP/Comune
+                            if len(parti) > 1:
+                                via_civico = ", ".join(parti[:-2]) if cap != "N.D." else parti[0]
+                        except:
+                            pass # In caso di formati strani, lasciamo i default
+
                     s_raw = details.get('business_status', 'N.D.')
                     s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
                     
-                    # CREIAMO IL DIZIONARIO CON TUTTE LE COLONNE CHE L'APP SI ASPETTA
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
                         'Stato': s_ita,
@@ -72,7 +93,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                         'Provincia': prov,
                         'Comune': comune,
                         'CAP': cap,
-                        'Indirizzo': details.get('formatted_address', 'N.D.'), # INDIRIZZO COMPLETO
+                        'Indirizzo': via_civico, 
                         'Sito Web': details.get('website', 'N.D.'),
                         'Email (Crawler)': 'N.D.',
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
@@ -84,7 +105,7 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                 if not token or count >= max_results: break
                 time.sleep(2) 
                 response = gmaps.places_nearby(page_token=token)
-        except Exception as e:
+        except Exception:
             continue
             
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
