@@ -13,84 +13,51 @@ from openai import OpenAI
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # GOOGLE 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=True) # Lasciamo solo lo spinner standard di Streamlit
 def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=50):
     try:
         gmaps = googlemaps.Client(key=api_key)
-    except Exception as e:
-        st.error(f"Errore connessione Google: {e}")
+    except Exception:
         return pd.DataFrame()
 
     ris = []
     raggio_m = int(raggio_km * 1000)
     count = 0
-    
-    # Placeholder per i log in tempo reale nell'interfaccia
-    log_placeholder = st.empty()
 
     for kw in keywords_list:
-        if count >= max_results:
-            break
-        
-        log_placeholder.info(f"🔍 Ricerca parola chiave: **{kw}** (Trovati finora: {count})")
-        
+        if count >= max_results: break
         try:
-            response = gmaps.places_nearby(
-                location=(lat, lon),
-                radius=raggio_m,
-                keyword=kw
-            )
-
+            response = gmaps.places_nearby(location=(lat, lon), radius=raggio_m, keyword=kw)
             while True:
                 results = response.get('results', [])
-                num_nuovi = len(results)
-                st.toast(f"Trovate {num_nuovi} potenziali aziende per '{kw}'")
-
                 for place in results:
-                    if count >= max_results:
-                        break
+                    if count >= max_results: break
+                    
+                    # Chiamata ai dettagli
+                    details = gmaps.place(place['place_id'], 
+                        fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
+                        language='it').get('result', {})
 
-                    # Dettagli singoli
-                    try:
-                        details_res = gmaps.place(
-                            place['place_id'],
-                            fields=['name', 'formatted_address', 'website', 'geometry', 'business_status', 'address_components'],
-                            language='it'
-                        )
-                        details = details_res.get('result', {})
-                    except Exception:
-                        continue
-
+                    # Estrazione componenti (Comune, Provincia, Nazione, etc.)
                     componenti = details.get('address_components', [])
                     comune, cap, provincia, nazione, via, civico = "N.D.", "N.D.", "N.D.", "N.D.", "", ""
-
                     for c in componenti:
-                        types = c.get('types', [])
-                        if 'locality' in types:
-                            comune = c['long_name']
-                        elif 'postal_code' in types:
-                            cap = c['long_name']
-                        elif 'administrative_area_level_2' in types:
-                            provincia = c['short_name']
-                        elif 'country' in types:
-                            nazione = c['long_name']
-                        elif 'route' in types:
-                            via = c['long_name']
-                        elif 'street_number' in types:
-                            civico = c['long_name']
-
-                    indirizzo_pulito = f"{via} {civico}".strip() if via else "N.D."
-                    s_raw = details.get('business_status', 'N.D.')
-                    s_ita = {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(s_raw, 'N.D.')
+                        t = c.get('types', [])
+                        if 'locality' in t: comune = c['long_name']
+                        elif 'postal_code' in t: cap = c['long_name']
+                        elif 'administrative_area_level_2' in t: provincia = c['short_name']
+                        elif 'country' in t: nazione = c['long_name']
+                        elif 'route' in t: via = c['long_name']
+                        elif 'street_number' in t: civico = c['long_name']
 
                     ris.append({
                         'Ragione Sociale': details.get('name', 'N.D.'),
-                        'Stato': s_ita,
+                        'Stato': {'OPERATIONAL': 'Attiva', 'CLOSED_TEMPORARILY': 'Chiusa Temp.'}.get(details.get('business_status'), 'N.D.'),
                         'Nazione': nazione,
                         'Provincia': provincia,
                         'Comune': comune,
                         'CAP': cap,
-                        'Indirizzo': indirizzo_pulito,
+                        'Indirizzo': f"{via} {civico}".strip() if via else "N.D.",
                         'Sito Web': details.get('website', 'N.D.'),
                         'Email (Crawler)': 'N.D.',
                         'lat': details.get('geometry', {}).get('location', {}).get('lat'),
@@ -98,36 +65,12 @@ def fetch_data_google(lat, lon, raggio_km, keywords_list, api_key, max_results=5
                     })
                     count += 1
 
-                # Gestione paginazione
                 token = response.get('next_page_token')
-                if not token or count >= max_results:
-                    break
-                
-                # Messaggio di attesa per il token (Google richiede tempo)
-                log_placeholder.warning(f"⏳ Caricamento pagina successiva per '{kw}'...")
-                
-                # Loop di attesa per validità token
-                max_retries = 5
-                success = False
-                for i in range(max_retries):
-                    time.sleep(2) # Pausa obbligatoria per Google
-                    response = gmaps.places_nearby(page_token=token)
-                    if response.get('status') == 'OK':
-                        success = True
-                        break
-                    elif response.get('status') == 'INVALID_REQUEST':
-                        continue # Il token non è ancora pronto
-                    else:
-                        break
-                
-                if not success:
-                    break
-
-        except Exception as e:
-            st.error(f"Errore durante la scansione di '{kw}': {e}")
+                if not token or count >= max_results: break
+                time.sleep(2) # Pausa tecnica necessaria
+                response = gmaps.places_nearby(page_token=token)
+        except Exception:
             continue
-
-    log_placeholder.success(f"✅ Ricerca completata! Totale aziende estratte: {count}")
     return pd.DataFrame(ris).drop_duplicates(subset=['Ragione Sociale']) if ris else pd.DataFrame()
 
 
