@@ -103,12 +103,28 @@ with col_ctrl:
 if not st.session_state.results.empty:
     st.divider()
     st.subheader("3. Database Risultati")
+
+    # 1. DEFINIAMO L'ORDINE RICHIESTO (Lo facciamo qui per sicurezza assoluta)
+    ordine_richiesto = [
+        'Ragione Sociale', 'Stato', 'Nazione', 'Provincia', 'Comune', 'CAP', 'Indirizzo', 
+        'Sito Web', 'Email (Crawler)', 'P.IVA (Crawler)', 
+        'P.IVA (AI)', 'Fatturato (AI)', 'Dipendenti (AI)', 'ATECO (AI)', 
+        'Ragione Sociale (AI)', 'Indirizzo (AI)', 'Nota/Fonte (AI)', 'testo_raw'
+    ]
+
+    # 2. ASSICURIAMOCI CHE TUTTE LE COLONNE ESISTANO (evita errori se Google non trova dati)
+    for col in ordine_richiesto:
+        if col not in st.session_state.results.columns:
+            st.session_state.results[col] = "N.D."
+
+    # 3. FILTRIAMO IL DATAFRAME NELL'ORDINE CORRETTO
+    df_da_mostrare = st.session_state.results[ordine_richiesto]
     
-    # Mostriamo solo le colonne richieste nel DataFrame visualizzato
-    colonne_visibili = [c for c in st.session_state.results.columns if c not in ['lat', 'lon']]
-    tabella_stilizzata = applica_stile_tabella(st.session_state.results[colonne_visibili])
-    
+    # 4. APPLICHIAMO LO STILE E MOSTRIAMO
+    tabella_stilizzata = applica_stile_tabella(df_da_mostrare)
     st.dataframe(tabella_stilizzata, use_container_width=True, height=600)
+
+    # --- BOTTONI AZIONE ---
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     progress_placeholder = st.empty()
     log_placeholder = st.empty()
